@@ -1,3 +1,5 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
 cc_binary(
     name = "codeart_llm_cli",
     srcs = ["main.cpp"],
@@ -9,6 +11,7 @@ cc_binary(
         "@abseil-cpp//absl/log:initialize",
         "@abseil-cpp//absl/log:flags",
         "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/status:statusor",
         "@nlohmann_json//:json",
         "@curl//:curl",
     ],
