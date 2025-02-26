@@ -1,5 +1,6 @@
 cc_binary(
     name = "codeart_llm_cli",
     srcs = ["main.cpp"],
+    deps = ["@abseil-cpp//absl/log"],
     visibility = ["//visibility:public"],
 )

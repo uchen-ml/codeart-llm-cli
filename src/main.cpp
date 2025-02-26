@@ -1,6 +1,6 @@
-#include <iostream>
+#include "absl/log/log.h"
 
 int main() {
-  std::cout << "Welcome to codeart-llm-cli!" << std::endl;
+  LOG(INFO) << "Welcome to codeart-llm-cli!";
   return 0;
 }

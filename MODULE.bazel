@@ -2,3 +2,13 @@
 This module defines the codeart_llm_cli package.
 """
 module(name = "codeart_llm_cli", version = "0.1")
+
+bazel_dep(name = "abseil-cpp", version = "20240116.1")
+
+# Dev dependencies
+bazel_dep(name = "hedron_compile_commands", dev_dependency = True)
+git_override(
+    module_name = "hedron_compile_commands",
+    remote = "https://github.com/eugeneo/bazel-compile-commands-extractor.git",
+    commit = "0ae99b7adb025b251962942f6e8a698a5539888b",
+)
