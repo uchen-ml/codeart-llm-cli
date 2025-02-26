@@ -1,5 +1,17 @@
 cc_test(
+    name = "history_test",
+    srcs = ["history.test.cc"],
+    deps = [
+        "//src:history",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/log:initialize",
+        "@abseil-cpp//absl/log:globals",
+        "@googletest//:gtest",
+    ],
+)
+
+cc_test(
     name = "main_test",
-    srcs = ["main_test.cpp"],
+    srcs = ["main.test.cpp"],
     deps = ["@googletest//:gtest_main"],
 )

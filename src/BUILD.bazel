@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
 cc_binary(
     name = "codeart_llm_cli",
@@ -8,11 +8,22 @@ cc_binary(
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/log",
-        "@abseil-cpp//absl/log:initialize",
         "@abseil-cpp//absl/log:flags",
-        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/log:initialize",
         "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@curl",
         "@nlohmann_json//:json",
-        "@curl//:curl",
+    ],
+)
+
+cc_library(
+    name = "history",
+    srcs = ["history.cc"],
+    hdrs = ["history.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
     ],
 )
