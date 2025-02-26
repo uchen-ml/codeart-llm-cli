@@ -10,7 +10,6 @@
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
-#include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
 
 // Define CLI flags
@@ -26,10 +25,10 @@ namespace {
 // Alias for JSON library
 using json = nlohmann::json;
 
-size_t WriteCallback(std::span<const char> data, void* userp) {
+size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
   auto* stream = static_cast<std::stringstream*>(userp);
-  stream->write(data.data(), data.size());
-  return data.size();
+  stream->write(static_cast<const char*>(contents), size * nmemb);
+  return size * nmemb;
 }
 
 // Load chat history from a file
@@ -37,14 +36,14 @@ absl::StatusOr<json> LoadChatHistory(const std::string& filename) {
   std::ifstream file(filename);
   if (!file.is_open()) {
     return absl::NotFoundError(
-        absl::StrCat("No chat history file found: ", filename));
+        absl::StrFormat("Chat history file not found: %s", filename));
   }
 
   json history;
   file >> history;
   if (file.fail()) {
     return absl::InvalidArgumentError(
-        absl::StrCat("Failed to parse JSON history in file: ", filename));
+        absl::StrFormat("Failed to parse JSON history in file: %s", filename));
   }
 
   return history;
@@ -55,13 +54,13 @@ absl::Status SaveChatHistory(const std::string& filename, const json& history) {
   std::ofstream file(filename);
   if (!file.is_open()) {
     return absl::InternalError(
-        absl::StrCat("Failed to open file for writing: ", filename));
+        absl::StrFormat("Failed to open file for writing: %s", filename));
   }
 
   file << history.dump(4);
   if (file.fail()) {
     return absl::InternalError(
-        absl::StrCat("Failed to write chat history to file: ", filename));
+        absl::StrFormat("Failed to write chat history to file: %s", filename));
   }
 
   return absl::OkStatus();
@@ -75,8 +74,8 @@ absl::StatusOr<std::string> SendOpenAIRequest(const std::string& api_key,
     return absl::InternalError("Failed to initialize CURL");
   }
 
-  std::string url = "https://api.openai.com/v1/chat/completions";
-  std::string post_data = chat_history.dump();
+  constexpr char kUrl[] = "https://api.openai.com/v1/chat/completions";
+  const std::string post_data = chat_history.dump();
 
   struct curl_slist* headers = nullptr;
   headers = curl_slist_append(
@@ -84,7 +83,7 @@ absl::StatusOr<std::string> SendOpenAIRequest(const std::string& api_key,
   headers = curl_slist_append(headers, "Content-Type: application/json");
 
   std::stringstream response;
-  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_URL, kUrl);
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   curl_easy_setopt(curl, CURLOPT_POST, 1L);
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, post_data.c_str());
@@ -92,8 +91,9 @@ absl::StatusOr<std::string> SendOpenAIRequest(const std::string& api_key,
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
   CURLcode res = curl_easy_perform(curl);
+
   curl_easy_cleanup(curl);
-  curl_slist_free_all(headers);
+  curl_slist_free_all(headers);  // Moved after curl cleanup
 
   if (res != CURLE_OK) {
     return absl::InternalError(
@@ -107,7 +107,6 @@ absl::StatusOr<std::string> SendOpenAIRequest(const std::string& api_key,
 }  // namespace codeart::llmcli
 
 int main(int argc, char* argv[]) {
-  // Alias for JSON library
   using json = nlohmann::json;
   absl::ParseCommandLine(argc, argv);
   absl::InitializeLog();
@@ -125,12 +124,10 @@ int main(int argc, char* argv[]) {
   // Load chat history
   absl::StatusOr<json> chat_history_or =
       codeart::llmcli::LoadChatHistory(history_file);
-  json chat_history = json::array();  // Default empty history
-
+  json chat_history =
+      chat_history_or.ok() ? std::move(*chat_history_or) : json::array();
   if (!chat_history_or.ok()) {
     LOG(WARNING) << chat_history_or.status().message();
-  } else {
-    chat_history = *chat_history_or;
   }
 
   // Append new user input
@@ -150,6 +147,7 @@ int main(int argc, char* argv[]) {
     LOG(ERROR) << response.status().message();
     return 1;
   }
+
   json response_json =
       json::parse(*response, nullptr, /*allow_exceptions=*/false);
   if (response_json.is_discarded()) {
@@ -157,7 +155,9 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  if (!response_json.contains("choices") || response_json["choices"].empty()) {
+  if (!response_json.contains("choices") || response_json["choices"].empty() ||
+      !response_json["choices"][0].contains("message") ||
+      !response_json["choices"][0]["message"].contains("content")) {
     LOG(ERROR) << "Invalid response format from OpenAI.";
     return 1;
   }
