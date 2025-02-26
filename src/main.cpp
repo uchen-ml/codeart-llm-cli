@@ -28,6 +28,9 @@ using json = nlohmann::json;
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
   auto* stream = static_cast<std::stringstream*>(userp);
   stream->write(static_cast<const char*>(contents), size * nmemb);
+
+  if (stream->fail()) return 0;  // Indicate error to CURL
+
   return size * nmemb;
 }
 
@@ -92,8 +95,8 @@ absl::StatusOr<std::string> SendOpenAIRequest(const std::string& api_key,
 
   CURLcode res = curl_easy_perform(curl);
 
-  curl_easy_cleanup(curl);
-  curl_slist_free_all(headers);  // Moved after curl cleanup
+  curl_slist_free_all(headers);  // Free headers first
+  curl_easy_cleanup(curl);       // Then clean up CURL
 
   if (res != CURLE_OK) {
     return absl::InternalError(
@@ -124,8 +127,8 @@ int main(int argc, char* argv[]) {
   // Load chat history
   absl::StatusOr<json> chat_history_or =
       codeart::llmcli::LoadChatHistory(history_file);
-  json chat_history =
-      chat_history_or.ok() ? std::move(*chat_history_or) : json::array();
+  json chat_history = chat_history_or.value_or(json::array());
+
   if (!chat_history_or.ok()) {
     LOG(WARNING) << chat_history_or.status().message();
   }
