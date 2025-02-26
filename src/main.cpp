@@ -2,6 +2,7 @@
 #include "absl/flags/parse.h"
 #include "absl/log/initialize.h"
 #include "absl/log/log.h"
+#include "absl/strings/str_format.h"
 
 #include <curl/curl.h>
 #include <sstream>
@@ -25,13 +26,13 @@ void SendOpenAIRequest(const std::string &api_key, const std::string &model,
   }
 
   std::string url = "https://api.openai.com/v1/chat/completions";
-  std::string post_data = R"({"model":")" + model +
-                          R"(","messages":[{"role":"user","content":")" +
-                          prompt + R"("}]})";
+  std::string post_data = absl::StrFormat(
+      R"({"model": "%s", "messages": [{"role": "user", "content": "%s"}]})",
+      model, prompt);
 
   struct curl_slist *headers = nullptr;
-  headers =
-      curl_slist_append(headers, ("Authorization: Bearer " + api_key).c_str());
+  headers = curl_slist_append(
+      headers, absl::StrFormat("Authorization: Bearer %s", api_key).c_str());
   headers = curl_slist_append(headers, "Content-Type: application/json");
 
   std::stringstream response;
