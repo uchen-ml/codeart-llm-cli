@@ -1,0 +1,4 @@
+"""
+This module defines the codeart_llm_cli package.
+"""
+module(name = "codeart_llm_cli", version = "0.1")

@@ -1,0 +1,5 @@
+bazel-bin
+bazel-codeart-llm-cli
+bazel-out
+bazel-testlogs
+MODULE.bazel.lock
