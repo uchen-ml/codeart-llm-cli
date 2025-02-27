@@ -40,10 +40,23 @@ TEST(HistoryTest, AddAndRetrieveEntries) {
 TEST(HistoryTest, ParserUnimplemented) {
   std::vector<std::byte> dummy_data = {std::byte{0x01}, std::byte{0x02},
                                        std::byte{0x03}};
-  HistoryParser parser;
-  auto result = parser.FromBytes(dummy_data);
+  auto result = HistoryParser::FromBytes(dummy_data);
   EXPECT_FALSE(result.ok());
   EXPECT_EQ(result.status().code(), absl::StatusCode::kUnimplemented);
+}
+
+TEST(HistoryTest, AuthorConversion) {
+  EXPECT_EQ(History::AuthorToString(Author::kUser), "user");
+  EXPECT_EQ(History::AuthorToString(Author::kAssistant), "assistant");
+  EXPECT_EQ(History::AuthorToString(Author::kSystem), "system");
+
+  EXPECT_EQ(History::StringToAuthor("user").value(), Author::kUser);
+  EXPECT_EQ(History::StringToAuthor("assistant").value(), Author::kAssistant);
+  EXPECT_EQ(History::StringToAuthor("system").value(), Author::kSystem);
+
+  absl::StatusOr<Author> invalid = History::StringToAuthor("invalid");
+  EXPECT_FALSE(invalid.ok());
+  EXPECT_EQ(invalid.status().code(), absl::StatusCode::kInvalidArgument);
 }
 
 }  // namespace codeart::llmcli

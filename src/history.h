@@ -21,6 +21,9 @@ class History {
     std::string content;
   };
 
+  static std::string AuthorToString(Author author);
+  static absl::StatusOr<Author> StringToAuthor(std::string_view str);
+
   // Adds a new entry to history
   void AddEntry(const Message& message);
 
@@ -35,10 +38,10 @@ class History {
 class HistoryParser {
  public:
   // Converts std::span<byte> to a History instance
-  absl::StatusOr<History> FromBytes(std::span<const std::byte> data);
+  static absl::StatusOr<History> FromBytes(std::span<const std::byte> data);
 
   // Converts a History instance to std::vector<byte>
-  std::vector<std::byte> ToBytes(const History& history);
+  static std::vector<std::byte> ToBytes(const History& history);
 };
 
 }  // namespace codeart::llmcli
