@@ -1,51 +1,73 @@
 #ifndef CODEART_LLMCLI_HISTORY_H_
 #define CODEART_LLMCLI_HISTORY_H_
 
+#include <chrono>
 #include <cstddef>
+#include <iostream>
 #include <span>
 #include <string>
 #include <vector>
 
-#include "absl/status/statusor.h"
+#include "nlohmann/json.hpp"  // IWYU pragma: keep - it is in fact used
 
 namespace codeart::llmcli {
 
-enum class Author { kUser, kAssistant, kSystem };
-
 class History {
  public:
-  struct Message {
-    Author author;
-    std::string timestamp;  // ISO 8601 format
-    std::string content_type;
-    std::string content;
+  class Message {
+   public:
+    Message(std::string_view author,
+            std::chrono::system_clock::time_point timestamp,
+            std::string_view content_type, std::string_view content)
+        : author_(author),
+          timestamp_(timestamp),
+          content_type_(std::move(content_type)),
+          content_(std::move(content)) {}
+
+    // Getters
+    const std::string& author() const { return author_; }
+    std::chrono::system_clock::time_point timestamp() const {
+      return timestamp_;
+    }
+    const std::string& content_type() const { return content_type_; }
+    const std::string& content() const { return content_; }
+
+    // Convert message to JSON string
+    nlohmann::json json() const;
+
+    // Equality operator
+    bool operator==(const Message& other) const = default;
+
+    // Friend function for logging
+    template <typename S>
+    friend void AbslStringify(S& sync, const Message& message) {
+      sync.Append(message.json().dump(4));
+    }
+
+   private:
+    std::string author_;
+    std::chrono::system_clock::time_point timestamp_;
+    std::string content_type_;
+    std::string content_;
   };
 
-  static std::string AuthorToString(Author author);
-  static absl::StatusOr<Author> StringToAuthor(std::string_view str);
-  static absl::StatusOr<History> Load() noexcept;
+  static std::string TimestampToString(
+      std::chrono::system_clock::time_point tp);
+  static std::chrono::system_clock::time_point StringToTimestamp(
+      const std::string& str);
 
-  // Adds a new entry to history
   void AddEntry(const Message& message);
-
-  // Retrieves all entries in history
   std::span<const Message> GetEntries() const;
 
-  void Save() const noexcept;
+  friend std::ostream& operator<<(std::ostream& os,
+                                  const History& history) noexcept;
+  friend std::istream& operator>>(std::istream& is, History& history) noexcept;
 
  private:
   std::vector<Message> entries_;
 };
 
-// Handles conversion between History and raw byte data
-class HistoryParser {
- public:
-  // Converts std::span<byte> to a History instance
-  static absl::StatusOr<History> FromBytes(std::span<const std::byte> data);
-
-  // Converts a History instance to std::vector<byte>
-  static std::vector<std::byte> ToBytes(const History& history);
-};
+std::ostream& operator<<(std::ostream& os, const History::Message& message);
 
 }  // namespace codeart::llmcli
 

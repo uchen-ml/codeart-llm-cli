@@ -20,7 +20,8 @@ void MessageRouter::RouteMessage(const std::string& message) {
     if (channel.empty()) channel = "#general";
     if (agent.empty()) agent = "@assistant";
 
-    History::Message history_entry{Author::kUser, "timestamp", "text", content};
+    History::Message history_entry{"user", std::chrono::system_clock::now(),
+                                   "text", content};
     history_.AddEntry(history_entry);
 
     std::string response = agent_manager_.SendMessage(agent, content);

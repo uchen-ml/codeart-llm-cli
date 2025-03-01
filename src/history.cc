@@ -1,115 +1,98 @@
 #include "history.h"
 
-#include <fstream>
+#include <iomanip>
+#include <sstream>
 
 #include "absl/log/log.h"
+#include "absl/strings/str_cat.h"
 
 #include "nlohmann/json.hpp"
 
 namespace codeart::llmcli {
 
-// static
-std::string History::AuthorToString(Author author) {
-  switch (author) {
-    case Author::kUser:
-      return "user";
-    case Author::kAssistant:
-      return "assistant";
-    case Author::kSystem:
-      return "system";
-  }
-  return "unknown";  // Should never happen
+std::ostream& operator<<(std::ostream& os, const History::Message& message) {
+  return os << absl::StrCat(message);
+}
+
+nlohmann::json History::Message::json() const {
+  return {{"author", author_},
+          {"timestamp", TimestampToString(timestamp_)},
+          {"content_type", content_type_},
+          {"content", content_}};
 }
 
 // static
-absl::StatusOr<Author> History::StringToAuthor(std::string_view str) {
-  if (str == "user") return Author::kUser;
-  if (str == "assistant") return Author::kAssistant;
-  if (str == "system") return Author::kSystem;
-  return absl::InvalidArgumentError("Invalid author type: " + std::string(str));
+std::string History::TimestampToString(
+    std::chrono::system_clock::time_point tp) {
+  std::time_t time = std::chrono::system_clock::to_time_t(tp);
+  std::tm tm = *std::gmtime(&time);  // Convert to UTC
+
+  std::ostringstream oss;
+  oss << std::put_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
+  return oss.str();
 }
 
 // static
-absl::StatusOr<History> History::Load() noexcept {
-  LOG(INFO) << "1";
-  std::ifstream file("chat_history.json");
-  if (!file) return History();
+std::chrono::system_clock::time_point History::StringToTimestamp(
+    const std::string& str) {
+  std::tm tm = {};
+  std::istringstream iss(str);
+  iss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%SZ");
 
-  nlohmann::json history_json;
-
-  if (file.peek() == std::ifstream::traits_type::eof()) {
-    return History();  // Empty file, return new history object.
+  if (iss.fail()) {
+    LOG(WARNING) << "Invalid timestamp format: " << str;
+    return std::chrono::system_clock::now();  // Fallback to current time
   }
 
-  // Use `json::parse()` with exception handling disabled
-  file >> history_json;
-  if (file.fail()) {
-    LOG(ERROR) << "Failed to read chat history JSON.";
-    return absl::InvalidArgumentError("Invalid chat history format.");
-  }
-
-  if (history_json.is_discarded()) {
-    LOG(ERROR) << "Chat history JSON parsing failed.";
-    return absl::InvalidArgumentError("Invalid chat history format.");
-  }
-
-  if (!history_json.is_array()) {
-    LOG(ERROR) << "Chat history JSON is not an array.";
-    return absl::InvalidArgumentError("Invalid chat history format.");
-  }
-
-  History history;
-  for (const auto& item : history_json) {
-    if (!item.is_object() || !item.contains("author") ||
-        !item.contains("timestamp") || !item.contains("content_type") ||
-        !item.contains("content")) {
-      LOG(WARNING) << "Skipping invalid chat history entry.";
-      continue;
-    }
-
-    auto author = StringToAuthor(item.value("author", ""));
-    if (!author.ok()) continue;
-
-    history.entries_.push_back({*author, item.value("timestamp", ""),
-                                item.value("content_type", ""),
-                                item.value("content", "")});
-  }
-
-  return history;
+  return std::chrono::system_clock::from_time_t(std::mktime(&tm));
 }
 
-void History::AddEntry(const Message& message) {
-  entries_.push_back(message);
-  Save();
-}
+void History::AddEntry(const Message& message) { entries_.push_back(message); }
 
 std::span<const History::Message> History::GetEntries() const {
   return entries_;
 }
 
-void History::Save() const noexcept {
-  std::ofstream file("chat_history.json", std::ios::trunc);
-  if (!file) {
-    LOG(ERROR) << "Failed to open history file for writing.";
-    return;
-  }
-
+// Serialize History to stream
+std::ostream& operator<<(std::ostream& os, const History& history) noexcept {
   nlohmann::json history_json;
-  for (const auto& entry : entries_) {
-    history_json.push_back({{"author", AuthorToString(entry.author)},
-                            {"timestamp", entry.timestamp},
-                            {"content_type", entry.content_type},
-                            {"content", entry.content}});
+  for (const auto& entry : history.entries_) {
+    history_json.push_back(entry.json());
   }
-
-  file << history_json.dump(4);
+  os << history_json.dump(4);
+  return os;
 }
 
-// static
-absl::StatusOr<History> HistoryParser::FromBytes(
-    std::span<const std::byte> /*data*/) {
-  return absl::UnimplementedError(
-      "History parsing from bytes is not implemented yet.");
+// Deserialize History from stream
+std::istream& operator>>(std::istream& is, History& history) noexcept {
+  auto history_json = nlohmann::json::parse(is, nullptr, false);
+  if (is.fail() || history_json.is_discarded()) {
+    LOG(ERROR) << "Failed to parse chat history JSON.";
+    is.setstate(std::ios::failbit);
+    return is;
+  }
+
+  if (!history_json.is_array()) {
+    LOG(ERROR) << "Chat history JSON is not an array.";
+    is.setstate(std::ios::failbit);
+    return is;
+  }
+
+  history.entries_.clear();
+  for (const auto& item : history_json) {
+    if (!item.is_object() || !item.contains("author") ||
+        !item.contains("timestamp") || !item.contains("content_type") ||
+        !item.contains("content")) {
+      LOG(WARNING) << "Skipping invalid chat history entry: " << item;
+      continue;
+    }
+    auto author = item.value("author", "user");
+    history.entries_.emplace_back(
+        author, History::StringToTimestamp(item.value("timestamp", "")),
+        item.value("content_type", ""), item.value("content", ""));
+  }
+
+  return is;
 }
 
 }  // namespace codeart::llmcli

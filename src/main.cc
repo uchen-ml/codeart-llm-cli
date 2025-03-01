@@ -12,6 +12,10 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
 
+#include "history.h"
+
+using codeart::llmcli::History;
+
 // Define CLI flags
 ABSL_FLAG(std::string, api_key, "", "OpenAI API key (required)");
 ABSL_FLAG(std::string, model, "gpt-4", "OpenAI model to use");
@@ -22,63 +26,52 @@ ABSL_FLAG(std::string, history_file, "chat_history.json",
 namespace codeart::llmcli {
 namespace {
 
-// Alias for JSON library
-using json = nlohmann::json;
-
 size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
   auto* stream = static_cast<std::stringstream*>(userp);
   stream->write(static_cast<const char*>(contents), size * nmemb);
-
-  if (stream->fail()) return 0;  // Indicate error to CURL
-
-  return size * nmemb;
+  return stream->fail() ? 0 : size * nmemb;
 }
 
 // Load chat history from a file
-absl::StatusOr<json> LoadChatHistory(const std::string& filename) {
+absl::StatusOr<History> LoadChatHistory(const std::string& filename) {
   std::ifstream file(filename);
-  if (!file.is_open()) {
-    return absl::NotFoundError(
-        absl::StrFormat("Chat history file not found: %s", filename));
+  if (!file) {
+    LOG(WARNING) << "Chat history file not found, starting a new history.";
+    return History();  // Return empty history
   }
 
-  json history;
+  History history;
   file >> history;
+
   if (file.fail()) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("Failed to parse JSON history in file: %s", filename));
+    return absl::InvalidArgumentError("Failed to parse chat history.");
   }
 
   return history;
 }
 
 // Save chat history to a file
-absl::Status SaveChatHistory(const std::string& filename, const json& history) {
-  std::ofstream file(filename);
-  if (!file.is_open()) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to open file for writing: %s", filename));
+absl::Status SaveChatHistory(const std::string& filename,
+                             const History& history) {
+  std::ofstream file(filename, std::ios::trunc);
+  if (!file) {
+    return absl::InternalError("Failed to open file for writing.");
   }
 
-  file << history.dump(4);
-  if (file.fail()) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to write chat history to file: %s", filename));
-  }
-
+  file << history;
   return absl::OkStatus();
 }
 
 // Send a request to OpenAI
-absl::StatusOr<std::string> SendOpenAIRequest(const std::string& api_key,
-                                              const json& chat_history) {
+absl::StatusOr<std::string> SendOpenAIRequest(
+    const std::string& api_key, const nlohmann::json& chat_history) {
   CURL* curl = curl_easy_init();
   if (!curl) {
     return absl::InternalError("Failed to initialize CURL");
   }
 
   constexpr char kUrl[] = "https://api.openai.com/v1/chat/completions";
-  const std::string post_data = chat_history.dump();
+  std::string post_data = chat_history.dump();
 
   struct curl_slist* headers = nullptr;
   headers = curl_slist_append(
@@ -95,8 +88,8 @@ absl::StatusOr<std::string> SendOpenAIRequest(const std::string& api_key,
 
   CURLcode res = curl_easy_perform(curl);
 
-  curl_slist_free_all(headers);  // Free headers first
-  curl_easy_cleanup(curl);       // Then clean up CURL
+  curl_slist_free_all(headers);
+  curl_easy_cleanup(curl);
 
   if (res != CURLE_OK) {
     return absl::InternalError(
@@ -125,27 +118,31 @@ int main(int argc, char* argv[]) {
   }
 
   // Load chat history
-  absl::StatusOr<json> chat_history_or =
+  absl::StatusOr<History> history_or =
       codeart::llmcli::LoadChatHistory(history_file);
-  json chat_history = chat_history_or.value_or(json::array());
-
-  if (!chat_history_or.ok()) {
-    LOG(WARNING) << chat_history_or.status().message();
+  if (!history_or.ok()) {
+    LOG(ERROR) << "Error loading chat history: " << history_or.status();
+    return 1;
   }
+  History history = history_or.value();
 
   // Append new user input
-  chat_history.push_back({{"role", "user"}, {"content", prompt}});
+  history.AddEntry({"user", std::chrono::system_clock::now(), "text", prompt});
 
-  // Construct request payload
-  json request_payload;
-  request_payload["model"] = model;
-  request_payload["messages"] = chat_history;
+  // Convert history to OpenAI JSON format
+  json chat_history_json;
+  chat_history_json["model"] = model;
+  json messages;
+  for (const auto& entry : history.GetEntries()) {
+    std::string role = (entry.author() == "user") ? "user" : "assistant";
+    messages.push_back({{"role", role}, {"content", entry.content()}});
+  }
+  chat_history_json["messages"] = messages;
 
   // Send request to OpenAI
   LOG(INFO) << "Sending request to OpenAI with model: " << model;
-
   absl::StatusOr<std::string> response =
-      codeart::llmcli::SendOpenAIRequest(api_key, request_payload);
+      codeart::llmcli::SendOpenAIRequest(api_key, chat_history_json);
   if (!response.ok()) {
     LOG(ERROR) << response.status().message();
     return 1;
@@ -171,11 +168,12 @@ int main(int argc, char* argv[]) {
   std::cout << "Assistant: " << assistant_reply << std::endl;
 
   // Append assistant's reply to chat history
-  chat_history.push_back({{"role", "assistant"}, {"content", assistant_reply}});
+  history.AddEntry(
+      {"assistant", std::chrono::system_clock::now(), "text", assistant_reply});
 
   // Save updated chat history
   absl::Status save_status =
-      codeart::llmcli::SaveChatHistory(history_file, chat_history);
+      codeart::llmcli::SaveChatHistory(history_file, history);
   if (!save_status.ok()) {
     LOG(ERROR) << "Failed to save chat history: " << save_status.message();
   }
