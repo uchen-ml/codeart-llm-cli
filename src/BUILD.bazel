@@ -1,10 +1,23 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
+cc_library(
+    name = "agent_manager",
+    srcs = ["agent_manager.cc"],
+    hdrs = ["agent_manager.h"],
+    deps = [
+        ":openai_client",
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
 cc_binary(
     name = "codeart_llm_cli",
-    srcs = ["main.cpp"],
+    srcs = ["main.cc"],
     visibility = ["//visibility:public"],
     deps = [
+        ":agent_manager",
+        ":history",
+        ":message_router",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/log",
@@ -23,7 +36,32 @@ cc_library(
     hdrs = ["history.h"],
     visibility = ["//visibility:public"],
     deps = [
+        "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
+        "@nlohmann_json//:json",
+    ],
+)
+
+cc_library(
+    name = "message_router",
+    srcs = ["message_router.cc"],
+    hdrs = ["message_router.h"],
+    deps = [
+        ":agent_manager",
+        ":history",
+        "@abseil-cpp//absl/strings",
+    ],
+)
+
+cc_library(
+    name = "openai_client",
+    srcs = ["openai_client.cc"],
+    hdrs = ["openai_client.h"],
+    deps = [
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@curl",
     ],
 )

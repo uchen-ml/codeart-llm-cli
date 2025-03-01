@@ -23,12 +23,15 @@ class History {
 
   static std::string AuthorToString(Author author);
   static absl::StatusOr<Author> StringToAuthor(std::string_view str);
+  static absl::StatusOr<History> Load() noexcept;
 
   // Adds a new entry to history
   void AddEntry(const Message& message);
 
   // Retrieves all entries in history
   std::span<const Message> GetEntries() const;
+
+  void Save() const noexcept;
 
  private:
   std::vector<Message> entries_;
