@@ -12,7 +12,8 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
 
-#include "history.h"
+#include "src/command_parser.h"
+#include "src/history.h"
 
 using codeart::llmcli::History;
 
@@ -123,6 +124,15 @@ int main(int argc, char* argv[]) {
     return 1;
   }
   History history = history_or.value();
+
+  // Check if input is a command
+  if (auto parsed_command = codeart::llmcli::CommandParser::Parse(prompt)) {
+    LOG(INFO) << "Recognized command: " << parsed_command->command;
+    for (const auto& arg : parsed_command->args) {
+      LOG(INFO) << "Arg: " << arg;
+    }
+    return 0;  // Command handling logic will be implemented later.
+  }
 
   // Append new user input
   history.AddEntry({"user", std::chrono::system_clock::now(), "text", prompt});

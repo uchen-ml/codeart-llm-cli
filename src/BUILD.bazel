@@ -18,6 +18,7 @@ cc_binary(
         ":agent_manager",
         ":history",
         ":message_router",
+        ":command_parser",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/log",
@@ -28,6 +29,13 @@ cc_binary(
         "@curl",
         "@nlohmann_json//:json",
     ],
+)
+
+cc_library(
+    name = "command_parser",
+    srcs = ["command_parser.cc"],
+    hdrs = ["command_parser.h"],
+    visibility = ["//visibility:public"],
 )
 
 cc_library(
