@@ -1,11 +1,23 @@
 cc_test(
+    name = "command_parser_test",
+    srcs = ["command_parser.test.cc"],
+    deps = [
+        "//src:command_parser",
+        "@abseil-cpp//absl/log:globals",
+        "@abseil-cpp//absl/log:initialize",
+        "@abseil-cpp//absl/log:log",
+        "@googletest//:gtest",
+    ],
+)
+
+cc_test(
     name = "history_test",
     srcs = ["history.test.cc"],
     deps = [
         "//src:history",
-        "@abseil-cpp//absl/status:statusor",
-        "@abseil-cpp//absl/log:initialize",
         "@abseil-cpp//absl/log:globals",
+        "@abseil-cpp//absl/log:initialize",
+        "@abseil-cpp//absl/status:statusor",
         "@googletest//:gtest",
     ],
 )

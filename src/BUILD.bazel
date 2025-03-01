@@ -16,9 +16,9 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":agent_manager",
+        ":command_parser",
         ":history",
         ":message_router",
-        ":command_parser",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/log",
@@ -36,6 +36,9 @@ cc_library(
     srcs = ["command_parser.cc"],
     hdrs = ["command_parser.h"],
     visibility = ["//visibility:public"],
+    deps = [
+        "@abseil-cpp//absl/strings:str_format",
+    ],
 )
 
 cc_library(
