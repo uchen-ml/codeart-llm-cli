@@ -4,7 +4,6 @@
 #include <chrono>
 #include <cstddef>
 #include <iostream>
-#include <span>
 #include <string>
 #include <vector>
 
@@ -21,8 +20,8 @@ class History {
             std::string_view content_type, std::string_view content)
         : author_(author),
           timestamp_(timestamp),
-          content_type_(std::move(content_type)),
-          content_(std::move(content)) {}
+          content_type_(content_type),
+          content_(content) {}
 
     // Getters
     const std::string& author() const { return author_; }
@@ -56,8 +55,8 @@ class History {
   static std::chrono::system_clock::time_point StringToTimestamp(
       const std::string& str);
 
-  void AddEntry(const Message& message);
-  std::span<const Message> GetEntries() const;
+  void AddEntry(Message message);
+  const std::vector<Message>& entries() const { return entries_; }
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const History& history) noexcept;

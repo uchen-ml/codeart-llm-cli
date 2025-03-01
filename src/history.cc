@@ -44,13 +44,13 @@ std::chrono::system_clock::time_point History::StringToTimestamp(
     return std::chrono::system_clock::now();  // Fallback to current time
   }
 
-  return std::chrono::system_clock::from_time_t(std::mktime(&tm));
-}
+#ifdef _WIN32
+  std::time_t time = _mkgmtime(&tm);  // Windows equivalent of timegm()
+#else
+  std::time_t time = timegm(&tm);
+#endif
 
-void History::AddEntry(const Message& message) { entries_.push_back(message); }
-
-std::span<const History::Message> History::GetEntries() const {
-  return entries_;
+  return std::chrono::system_clock::from_time_t(time);
 }
 
 // Serialize History to stream
@@ -93,6 +93,10 @@ std::istream& operator>>(std::istream& is, History& history) noexcept {
   }
 
   return is;
+}
+
+void History::AddEntry(Message message) {
+  entries_.emplace_back(std::move(message));
 }
 
 }  // namespace codeart::llmcli

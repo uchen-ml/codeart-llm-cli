@@ -133,7 +133,7 @@ int main(int argc, char* argv[]) {
   json chat_history_json;
   chat_history_json["model"] = model;
   json messages;
-  for (const auto& entry : history.GetEntries()) {
+  for (const auto& entry : history.entries()) {
     std::string role = (entry.author() == "user") ? "user" : "assistant";
     messages.push_back({{"role", role}, {"content", entry.content()}});
   }
