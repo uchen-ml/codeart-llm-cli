@@ -32,27 +32,25 @@ size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
   return stream->fail() ? 0 : size * nmemb;
 }
 
-// Load chat history from a file
-absl::StatusOr<History> LoadChatHistory(const std::string& filename) {
+absl::StatusOr<History> LoadHistoryFromFile(const std::string& filename) {
   std::ifstream file(filename);
   if (!file) {
-    LOG(WARNING) << "Chat history file not found, starting a new history.";
-    return History();  // Return empty history
+    LOG(WARNING) << "History file not found, starting new history.";
+    return History();
   }
 
   History history;
   file >> history;
 
   if (file.fail()) {
-    return absl::InvalidArgumentError("Failed to parse chat history.");
+    return absl::InvalidArgumentError("Failed to parse chat history JSON.");
   }
 
   return history;
 }
 
-// Save chat history to a file
-absl::Status SaveChatHistory(const std::string& filename,
-                             const History& history) {
+absl::Status SaveHistoryToFile(const std::string& filename,
+                               const History& history) {
   std::ofstream file(filename, std::ios::trunc);
   if (!file) {
     return absl::InternalError("Failed to open file for writing.");
@@ -119,7 +117,7 @@ int main(int argc, char* argv[]) {
 
   // Load chat history
   absl::StatusOr<History> history_or =
-      codeart::llmcli::LoadChatHistory(history_file);
+      codeart::llmcli::LoadHistoryFromFile(history_file);
   if (!history_or.ok()) {
     LOG(ERROR) << "Error loading chat history: " << history_or.status();
     return 1;
@@ -173,7 +171,7 @@ int main(int argc, char* argv[]) {
 
   // Save updated chat history
   absl::Status save_status =
-      codeart::llmcli::SaveChatHistory(history_file, history);
+      codeart::llmcli::SaveHistoryToFile(history_file, history);
   if (!save_status.ok()) {
     LOG(ERROR) << "Failed to save chat history: " << save_status.message();
   }
