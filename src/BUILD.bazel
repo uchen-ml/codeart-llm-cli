@@ -1,5 +1,26 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
+cc_binary(
+    name = "codeart_llm_cli",
+    srcs = ["main.cc"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":agent_manager",
+        ":command_parser",
+        ":core",
+        ":message_router",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:flags",
+        "@abseil-cpp//absl/log:initialize",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@curl",
+        "@nlohmann_json//:json",
+    ],
+)
+
 cc_library(
     name = "agent_manager",
     srcs = ["agent_manager.cc"],
@@ -10,23 +31,25 @@ cc_library(
     ],
 )
 
-cc_binary(
-    name = "codeart_llm_cli",
-    srcs = ["main.cc"],
+cc_library(
+    name = "core",
+    srcs = [
+        "chat.cc",
+        "history.cc",
+        "model_manager.cc",
+    ],
+    hdrs = [
+        "chat.h",
+        "history.h",
+        "message.h",
+        "model_manager.h",
+    ],
     visibility = ["//visibility:public"],
     deps = [
-        ":agent_manager",
-        ":command_parser",
-        ":history",
-        ":message_router",
-        "@abseil-cpp//absl/flags:flag",
-        "@abseil-cpp//absl/flags:parse",
+        "@abseil-cpp//absl/functional:any_invocable",
         "@abseil-cpp//absl/log",
-        "@abseil-cpp//absl/log:flags",
-        "@abseil-cpp//absl/log:initialize",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
-        "@curl",
         "@nlohmann_json//:json",
     ],
 )
@@ -42,25 +65,12 @@ cc_library(
 )
 
 cc_library(
-    name = "history",
-    srcs = ["history.cc"],
-    hdrs = ["history.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@abseil-cpp//absl/log",
-        "@abseil-cpp//absl/status:statusor",
-        "@abseil-cpp//absl/strings",
-        "@nlohmann_json//:json",
-    ],
-)
-
-cc_library(
     name = "message_router",
     srcs = ["message_router.cc"],
     hdrs = ["message_router.h"],
     deps = [
         ":agent_manager",
-        ":history",
+        ":core",
         "@abseil-cpp//absl/strings",
     ],
 )

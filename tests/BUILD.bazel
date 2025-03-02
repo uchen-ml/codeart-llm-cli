@@ -14,7 +14,7 @@ cc_test(
     name = "history_test",
     srcs = ["history.test.cc"],
     deps = [
-        "//src:history",
+        "//src:core",
         "@abseil-cpp//absl/log:globals",
         "@abseil-cpp//absl/log:initialize",
         "@abseil-cpp//absl/status:statusor",
