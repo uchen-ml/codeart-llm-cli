@@ -10,9 +10,12 @@ namespace codeart::llmcli {
 
 class Message {
  public:
-  explicit Message(std::string_view contents) : contents_(contents) {}
+  explicit Message(std::string_view contents, bool is_user)
+      : contents_(contents), is_user_(is_user) {}
 
   const std::string& contents() const { return contents_; }
+  const std::vector<Message>& context() const { return context_; }
+  bool is_user() const { return is_user_; }
 
   template <typename Sink>
   friend void AbslStringify(Sink& sink, const Message& message) {
@@ -21,6 +24,8 @@ class Message {
 
  private:
   std::string contents_;
+  bool is_user_;
+  std::vector<Message> context_;
 };
 
 }  // namespace codeart::llmcli

@@ -13,11 +13,21 @@
 
 namespace codeart::llmcli {
 
+class Conversation {};
+
+struct ModelCapabilities {
+  bool supports_streaming;
+  size_t max_context_length;
+};
+
 class ModelBackend {
  public:
   virtual ~ModelBackend() = default;
-  virtual absl::Status SendMessage(const Message& message) = 0;
   virtual std::string Name() const = 0;
+  virtual std::unique_ptr<Conversation> StartConversation() = 0;
+  virtual absl::StatusOr<Message> SendMessage(Conversation& conversation,
+                                              const Message& message) = 0;
+  virtual absl::StatusOr<ModelCapabilities> GetCapabilities() const = 0;
 };
 
 class ModelDelegate {
@@ -62,8 +72,7 @@ class ModelManager : private std::enable_shared_from_this<ModelManager> {
  private:
   ModelManager() = default;
 
-  std::unordered_map<std::string, std::unique_ptr<ModelBackend>>
-      models_;
+  std::unordered_map<std::string, std::unique_ptr<ModelBackend>> models_;
 };
 
 }  // namespace codeart::llmcli

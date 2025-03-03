@@ -68,7 +68,7 @@ absl::Status InteractiveCLI::ProcessCommand(
 
 absl::Status InteractiveCLI::SendMessage(std::string_view message) {
   // Regular message to the model
-  Message user_message(message);
+  Message user_message(message, true);
 
   // Add to history
   history_.AddEntry(History::Message{"user", std::chrono::system_clock::now(),

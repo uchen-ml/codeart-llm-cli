@@ -10,6 +10,7 @@ cc_binary(
         ":core",
         ":message_router",
         ":interactive_cli",
+        "//src/models:openai",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/log",
