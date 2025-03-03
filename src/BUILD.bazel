@@ -9,6 +9,7 @@ cc_binary(
         ":command_parser",
         ":core",
         ":message_router",
+        ":interactive_cli",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/log",
