@@ -4,6 +4,7 @@
 #include <optional>
 #include <ostream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "absl/strings/str_format.h"
@@ -26,7 +27,7 @@ class CommandParser {
     }
   };
 
-  static std::optional<ParsedCommand> Parse(const std::string& input);
+  static std::optional<ParsedCommand> Parse(std::string_view input);
 };
 
 std::ostream& operator<<(std::ostream& os,

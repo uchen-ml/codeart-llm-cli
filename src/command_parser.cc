@@ -8,7 +8,7 @@
 namespace codeart::llmcli {
 
 std::optional<CommandParser::ParsedCommand> CommandParser::Parse(
-    const std::string& input) {
+    std::string_view input) {
   std::string trimmed_input(absl::StripAsciiWhitespace(input));
   if (trimmed_input.empty() || trimmed_input[0] != '/' ||
       trimmed_input.size() == 1) {
