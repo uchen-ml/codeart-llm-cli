@@ -1,0 +1,11 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+
+cc_test(
+    name = "input_test",
+    srcs = ["input.test.cc"],
+    deps = [
+        "//src:input",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)

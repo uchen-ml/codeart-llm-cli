@@ -1,191 +1,153 @@
-// Add to the existing imports
-#include <filesystem>
-#include <fstream>
+#include <array>
+#include <iostream>
+#include <memory>
+#include <optional>
+#include <string>
 #include <string_view>
+#include <thread>
+#include <tuple>
+#include <type_traits>
+#include <unordered_map>
+#include <vector>
 
+#include "absl/cleanup/cleanup.h"
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "absl/flags/usage.h"
+#include "absl/functional/any_invocable.h"
 #include "absl/log/initialize.h"
-#include "absl/log/log.h"
+#include "absl/status/statusor.h"
 
-#include "src/history.h"
-#include "src/interactive_cli.h"
+#include "curl/curl.h"
+#include "src/claude_client.h"
+#include "src/client.h"
+#include "src/input.h"
 
-// Define CLI flags
-ABSL_FLAG(std::string, api_key, "", "OpenAI API key (required)");
-ABSL_FLAG(std::string, model, "", "Model to use");
-ABSL_FLAG(std::string, prompt, "", "User prompt for OpenAI");
-ABSL_FLAG(std::string, history_file, "chat_history.json",
-          "File to store chat history");
-ABSL_FLAG(bool, interactive, true, "Run in interactive mode");
-
-namespace codeart::llmcli {
 namespace {
 
-absl::StatusOr<History> LoadHistoryFromFile(
-    const std::filesystem::path& filename) {
-  std::ifstream file(filename);
-  if (!file) {
-    LOG(WARNING) << "History file not found, starting new history.";
-    return History();
-  }
+constexpr std::string_view kApiKey = "api_key";
 
-  History history;
-  file >> history;
+using Parameters = std::unordered_map<std::string_view, std::string>;
 
-  if (file.fail()) {
-    return absl::InvalidArgumentError("Failed to parse chat history JSON.");
-  }
+using ClientFactory =
+    absl::AnyInvocable<absl::StatusOr<std::unique_ptr<processfile::Client>>(
+        const Parameters&) const>;
 
-  return history;
-}
+class ClaudeFactory {
+ public:
+  ClaudeFactory(std::string_view model, std::string_view name)
+      : model_(model), name_(name) {}
 
-absl::Status SaveHistoryToFile(const std::filesystem::path& filename,
-                               const History& history) {
-  std::ofstream file(filename, std::ios::trunc);
-  if (!file) {
-    return absl::InternalError("Failed to open file for writing.");
-  }
-
-  file << history;
-  return absl::OkStatus();
-}
-
-absl::Status OneOff(const std::filesystem::path& history_file,
-                    std::string_view prompt, std::string_view model) {
-  using json = nlohmann::json;
-  // Load chat history
-  absl::StatusOr<History> history_or =
-      codeart::llmcli::LoadHistoryFromFile(history_file);
-  if (!history_or.ok()) {
-    return std::move(history_or).status();
-  }
-  History history = history_or.value();
-
-  // Check if input is a command
-  if (auto parsed_command = codeart::llmcli::CommandParser::Parse(prompt)) {
-    LOG(INFO) << "Recognized command: " << parsed_command->command;
-    for (const auto& arg : parsed_command->args) {
-      LOG(INFO) << "Arg: " << arg;
+  absl::StatusOr<std::unique_ptr<processfile::Client>> operator()(
+      const Parameters& parameters) const {
+    auto it = parameters.find(kApiKey);
+    if (it == parameters.end()) {
+      return absl::InvalidArgumentError("Missing 'api_key' parameter");
     }
-    return absl::UnimplementedError(
-        "Command handling");  // Command handling logic will be implemented
-                              // later.
+    return std::make_unique<processfile::ClaudeClient>(model_, name_,
+                                                       it->second, 1024);
   }
 
-  // Append new user input
-  history.AddEntry({"user", std::chrono::system_clock::now(), "text", prompt});
+ private:
+  std::string_view model_;
+  std::string_view name_;
+};
 
-  // Convert history to OpenAI JSON format
-  json chat_history_json;
-  chat_history_json["model"] = model;
-  json messages;
-  for (const auto& entry : history.entries()) {
-    std::string role = (entry.author() == "user") ? "user" : "assistant";
-    messages.push_back({{"role", role}, {"content", entry.content()}});
+std::unordered_map<std::string_view, ClientFactory> PrepareClients() {
+  std::unordered_map<std::string_view, ClientFactory> clients;
+  using std::string_view_literals::operator""sv;
+  static constexpr std::array kClaudeModels = {
+      std::tuple{"claude"sv, "claude-3-5-haiku-20241022"sv,
+                 "Claude 3.5 Haiku"sv},
+      std::tuple{"haiku"sv, "claude-3-5-haiku-20241022"sv,
+                 "Claude 3.5 Haiku"sv},
+      std::tuple{"sonnet"sv, "claude-3-7-sonnet-20250219"sv,
+                 "Claude 3.7 Sonnet"sv},
+  };
+  for (const auto& [id, model, name] : kClaudeModels) {
+    clients.emplace(id, ClaudeFactory(model, name));
   }
-  chat_history_json["messages"] = messages;
+  return clients;
+}
 
-  // Send request to OpenAI
-  // LOG(INFO) << "Sending request to OpenAI with model: " << model;
-  // absl::StatusOr<std::string> response =
-  //     codeart::llmcli::SendOpenAIRequest(api_key, chat_history_json);
-  // if (!response.ok()) {
-  //   LOG(ERROR) << response.status().message();
-  //   return 1;
-  // }
-  absl::StatusOr<std::string> response =
-      absl::UnimplementedError("Unimplemented");
-  json response_json =
-      json::parse(*response, nullptr, /*allow_exceptions=*/false);
-  if (response_json.is_discarded()) {
-    return absl::UnavailableError("Failed to parse response from OpenAI.");
+template <typename T>
+std::invoke_result_t<T> SpinWhile(const T& func) {
+  absl::Mutex mu;
+  absl::CondVar cv;
+  std::optional<std::invoke_result_t<T>> result;
+  std::thread spinner_thread([&]() {
+    auto r = func();
+    absl::MutexLock lock(&mu);
+    result = std::move(r);
+    cv.Signal();
+  });
+  absl::Cleanup cleanup = [&]() { spinner_thread.join(); };
+  constexpr std::string_view kSpinChars = "|/-\\";
+  absl::MutexLock lock(&mu);
+  int spin = 0;
+  std::cout << " ";
+  while (!result.has_value()) {
+    std::cout << "\r" << kSpinChars[spin++ % kSpinChars.size()];
+    std::cout.flush();
+    cv.WaitWithTimeout(&mu, absl::Milliseconds(200));
   }
-
-  if (!response_json.contains("choices") || response_json["choices"].empty() ||
-      !response_json["choices"][0].contains("message") ||
-      !response_json["choices"][0]["message"].contains("content")) {
-    return absl::ResourceExhaustedError("Invalid response format from OpenAI.");
-  }
-
-  // Extract and print assistant's reply
-  std::string assistant_reply =
-      response_json["choices"][0]["message"]["content"];
-  std::cout << "Assistant: " << assistant_reply << std::endl;
-
-  // Append assistant's reply to chat history
-  history.AddEntry(
-      {"assistant", std::chrono::system_clock::now(), "text", assistant_reply});
-
-  // Save updated chat history
-  absl::Status save_status =
-      codeart::llmcli::SaveHistoryToFile(history_file, history);
-  if (!save_status.ok()) {
-    LOG(ERROR) << "Failed to save chat history: " << save_status.message();
-  }
-  return absl::OkStatus();
+  std::cout << "\r";
+  return std::move(result).value();
 }
 
 }  // namespace
-}  // namespace codeart::llmcli
 
-// Update the main function
+ABSL_FLAG(std::string, model, "claude",
+          "LLM model to use: 'claude' or 'openai'.");
+ABSL_FLAG(std::optional<std::string>, api_key, std::nullopt, "API key.");
+
 int main(int argc, char* argv[]) {
-  absl::ParseCommandLine(argc, argv);
+  curl_global_init(CURL_GLOBAL_ALL);
+  absl::SetProgramUsageMessage(
+      "Filter program that sends input through an LLM with a prompt.\n"
+      "Usage: processfile --prompt=<text> [--model=<model>] [input_file]");
+  std::vector<char*> positional_args = absl::ParseCommandLine(argc, argv);
   absl::InitializeLog();
 
-  absl::SetProgramUsageMessage(
-      "Interactive CLI for talking to a language model");
-
-  std::string api_key = absl::GetFlag(FLAGS_api_key);
   std::string model = absl::GetFlag(FLAGS_model);
-  std::string history_file = absl::GetFlag(FLAGS_history_file);
-  bool interactive = absl::GetFlag(FLAGS_interactive);
 
-  if (api_key.empty()) {
-    LOG(ERROR) << "API key is required. Use --api-key=<your_api_key>";
+  auto factories = PrepareClients();
+  auto it = factories.find(model);
+  if (it == factories.end()) {
+    std::cerr << "Error: Unknown model: " << model << std::endl;
     return 1;
   }
 
-  // Initialize ModelManager
-  auto model_manager = codeart::llmcli::ModelManager::Create();
+  Parameters parameters;
+  if (absl::GetFlag(FLAGS_api_key).has_value()) {
+    parameters[kApiKey] = absl::GetFlag(FLAGS_api_key).value();
+  }
 
-  // Register OpenAI model backend
-  // auto openai_model =
-  //     std::make_unique<codeart::llmcli::OpenAIModelBackend>(model, api_key);
-  // model_manager->RegisterModel(std::move(openai_model));
-
-  // Load history
-  auto history_result = codeart::llmcli::LoadHistoryFromFile(history_file);
-  if (!history_result.ok()) {
-    LOG(ERROR) << "Error loading history: " << history_result.status();
+  auto client = it->second(parameters);
+  if (!client.ok()) {
+    std::cerr << "Error: " << client.status().message() << std::endl;
     return 1;
   }
-  auto history = std::move(*history_result);
 
-  if (interactive) {
-    // Run in interactive mode
-    codeart::llmcli::InteractiveCLI cli(model_manager, std::move(history));
-    auto status = cli.Run();
-    if (!status.ok()) {
-      LOG(ERROR) << "Interactive CLI error: " << status;
-      return 1;
+  std::cout << "Uchen Chat CLI. Type your message below:";
+  uchen::chat::InputReader reader(std::cin);
+  while (true) {
+    std::cout << "\n> ";
+    auto prompt = reader();
+    if (prompt == std::nullopt) {
+      return 0;
     }
-
-    // Save history on exit
-    auto save_status =
-        codeart::llmcli::SaveHistoryToFile(history_file, cli.GetHistory());
-    if (!save_status.ok()) {
-      LOG(ERROR) << "Failed to save history: " << save_status;
-    }
-  } else {
-    std::string prompt = absl::GetFlag(FLAGS_prompt);
-    absl::Status status = codeart::llmcli::OneOff(history_file, prompt, model);
-    if (!status.ok()) {
-      LOG(ERROR) << "Error: " << status;
-      return 1;
+    if (!prompt->empty()) {
+      processfile::CurlFetch fetch;
+      auto response = SpinWhile(
+          [&]() { return client.value()->Query(fetch, *prompt, {}); });
+      if (!response.ok()) {
+        std::cerr << "Error: " << response.status().message() << std::endl;
+        return 1;
+      }
+      std::cout << "Response: " << *response << std::endl;
     }
   }
+
   return 0;
 }
