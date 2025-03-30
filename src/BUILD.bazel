@@ -1,14 +1,15 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
+package(default_visibility = ["//visibility:public"])
+
 cc_binary(
-    name = "codeart_llm_cli",
+    name = "uchenchat",
     srcs = ["main.cc"],
     visibility = ["//visibility:public"],
     deps = [
-        ":agent_manager",
-        ":command_parser",
-        ":core",
-        ":message_router",
+        ":fetch",
+        ":input",
+        ":llms",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/log",
@@ -16,38 +17,19 @@ cc_binary(
         "@abseil-cpp//absl/log:initialize",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
-        "@curl",
-        "@nlohmann_json//:json",
     ],
 )
 
 cc_library(
-    name = "agent_manager",
-    srcs = ["agent_manager.cc"],
-    hdrs = ["agent_manager.h"],
-    deps = [
-        ":openai_client",
-        "@abseil-cpp//absl/strings",
-    ],
-)
-
-cc_library(
-    name = "core",
-    srcs = [
-        "chat.cc",
-        "history.cc",
-        "model_manager.cc",
-    ],
+    name = "llms",
+    srcs = ["claude_client.cc"],
     hdrs = [
-        "chat.h",
-        "history.h",
-        "message.h",
-        "model_manager.h",
+        "claude_client.h",
+        "client.h",
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "@abseil-cpp//absl/functional:any_invocable",
-        "@abseil-cpp//absl/log",
+        ":fetch",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@nlohmann_json//:json",
@@ -55,34 +37,23 @@ cc_library(
 )
 
 cc_library(
-    name = "command_parser",
-    srcs = ["command_parser.cc"],
-    hdrs = ["command_parser.h"],
+    name = "fetch",
+    srcs = ["fetch.cc"],
+    hdrs = ["fetch.h"],
     visibility = ["//visibility:public"],
     deps = [
-        "@abseil-cpp//absl/strings:str_format",
-    ],
-)
-
-cc_library(
-    name = "message_router",
-    srcs = ["message_router.cc"],
-    hdrs = ["message_router.h"],
-    deps = [
-        ":agent_manager",
-        ":core",
-        "@abseil-cpp//absl/strings",
-    ],
-)
-
-cc_library(
-    name = "openai_client",
-    srcs = ["openai_client.cc"],
-    hdrs = ["openai_client.h"],
-    deps = [
+        "@abseil-cpp//absl/cleanup",
         "@abseil-cpp//absl/log",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@curl",
+        "@nlohmann_json//:json",
     ],
+)
+
+cc_library(
+    name = "input",
+    srcs = ["input.cc"],
+    hdrs = ["input.h"],
+    deps = ["@abseil-cpp//absl/strings"],
 )
