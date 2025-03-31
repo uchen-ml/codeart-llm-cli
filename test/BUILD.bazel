@@ -4,7 +4,7 @@ cc_test(
     name = "input_test",
     srcs = ["input.test.cc"],
     deps = [
-        "//src:input",
+        "//src:tui",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

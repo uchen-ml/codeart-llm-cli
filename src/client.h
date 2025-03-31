@@ -1,13 +1,14 @@
-#ifndef SRC_PROCESSFILE_CLIENT_H_
-#define SRC_PROCESSFILE_CLIENT_H_
+#ifndef SRC_CLIENT_H_
+#define SRC_CLIENT_H_
 
 #include <string>
 #include <string_view>
 
 #include "absl/status/statusor.h"
+
 #include "src/fetch.h"
 
-namespace processfile {
+namespace uchen::chat {
 
 // Interface for LLM clients
 class Client {
@@ -22,6 +23,17 @@ class Client {
       absl::Span<const std::string_view> input_contents) = 0;
 };
 
-}  // namespace processfile
+struct Parameters {
+  std::string model;
+  std::string provider;
+  std::optional<std::string> api_key;
+  int max_tokens = 1024;
+};
 
-#endif  // SRC_PROCESSFILE_CLIENT_H_
+using ClientFactory =
+    absl::AnyInvocable<absl::StatusOr<std::unique_ptr<Client>>(
+        const Parameters&) const>;
+
+}  // namespace uchen::chat
+
+#endif  // SRC_CLIENT_H_

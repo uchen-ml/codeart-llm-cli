@@ -1,12 +1,12 @@
-#ifndef SRC_PROCESSFILE_FETCH_H_
-#define SRC_PROCESSFILE_FETCH_H_
+#ifndef SRC_FETCH_H_
+#define SRC_FETCH_H_
 
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
 
 #include "nlohmann/json.hpp"  // IWYU pragma: keep
 
-namespace processfile {
+namespace uchen::chat {
 
 struct Header {
   std::string key;
@@ -19,6 +19,17 @@ class Response {
                                   void* userdata);
 
   absl::StatusOr<nlohmann::json> Json() const;
+
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const Response& response) {
+    auto json = response.Json();
+    if (json.ok()) {
+      sink.Append(json->dump(2));
+    } else {
+      sink.Append(
+          std::string_view(response.body_.data(), response.body_.size()));
+    }
+  }
 
  private:
   std::vector<char> body_;
@@ -40,6 +51,6 @@ class CurlFetch : public Fetch {
                                 const nlohmann::json& payload) const override;
 };
 
-}  // namespace processfile
+}  // namespace uchen::chat
 
-#endif  // SRC_PROCESSFILE_FETCH_H_
+#endif  // SRC_FETCH_H_
