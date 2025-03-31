@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <string_view>
 #include <vector>
 
@@ -12,7 +13,12 @@
 
 #include "curl/curl.h"
 
-namespace processfile {
+namespace uchen::chat {
+
+namespace {
+constexpr uint16_t kMaxLogLevel = 5;
+constexpr uint16_t kHeadersLog = 3;
+}  // namespace
 
 // Write callback function for CURL
 size_t Response::CurlWriteCallback(char* ptr, size_t size, size_t nmemb,
@@ -38,7 +44,7 @@ absl::StatusOr<Response> CurlFetch::Post(const std::string& url,
                                          absl::Span<const Header> headers,
                                          const nlohmann::json& payload) const {
   Response response;
-  VLOG(1) << "POST " << url << " with payload: " << payload.dump();
+  VLOG(kMaxLogLevel) << "POST " << url << " with payload: " << payload.dump();
   CURL* curl = curl_easy_init();
   absl::Cleanup curl_cleanup = [curl] { curl_easy_cleanup(curl); };
   std::string payload_str = payload.dump();
@@ -57,7 +63,7 @@ absl::StatusOr<Response> CurlFetch::Post(const std::string& url,
   };
 
   for (const Header& header : headers) {
-    VLOG(1) << absl::StrCat(header.key + ": " + header.value);
+    VLOG(kHeadersLog) << absl::StrCat(header.key + ": " + header.value);
     curl_headers = curl_slist_append(
         curl_headers, absl::StrCat(header.key + ": " + header.value).c_str());
   }
@@ -69,9 +75,8 @@ absl::StatusOr<Response> CurlFetch::Post(const std::string& url,
     return absl::InternalError(
         absl::StrCat("Failed to perform request: ", curl_easy_strerror(res)));
   }
-
-  // Do some work
+  VLOG(kMaxLogLevel) << "Response: " << absl::StrCat(response);
   return response;
 }
 
-}  // namespace processfile
+}  // namespace uchen::chat

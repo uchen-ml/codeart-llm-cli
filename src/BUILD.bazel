@@ -8,8 +8,8 @@ cc_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":fetch",
-        ":input",
         ":llms",
+        ":tui",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/log",
@@ -22,9 +22,10 @@ cc_binary(
 
 cc_library(
     name = "llms",
-    srcs = ["claude_client.cc"],
+    srcs = ["claude_client.cc", "openai_client.cc"],
     hdrs = [
         "claude_client.h",
+        "openai_client.h",
         "client.h",
     ],
     visibility = ["//visibility:public"],
@@ -52,8 +53,11 @@ cc_library(
 )
 
 cc_library(
-    name = "input",
+    name = "tui",
     srcs = ["input.cc"],
-    hdrs = ["input.h"],
+    hdrs = [
+        "input.h",
+        "tui.h",
+    ],
     deps = ["@abseil-cpp//absl/strings"],
 )
