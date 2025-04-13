@@ -1,14 +1,21 @@
 #ifndef SRC_OPENAI_CLIENT_H_
 #define SRC_OPENAI_CLIENT_H_
 
-#include <string_view>
-#include <unordered_map>
+#include <memory>
+#include <optional>
+#include <string>
+
+#include "absl/flags/declare.h"
 
 #include "src/client.h"
+#include "src/fetch.h"
+
+ABSL_DECLARE_FLAG(std::optional<std::string>, openai_api_key);
 
 namespace uchen::chat {
 
-std::unordered_map<std::string_view, ClientFactory> OpenAIClients();
+std::unique_ptr<ModelProvider> MakeOpenAIModelProvider(
+    std::shared_ptr<Fetch> fetch, Parameters parameters);
 
 }  // namespace uchen::chat
 

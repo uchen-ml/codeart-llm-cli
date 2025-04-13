@@ -1,7 +1,15 @@
+#include "src/openai_client.h"
+
+#include <algorithm>
 #include <cstdlib>
+#include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
+#include "absl/flags/flag.h"
+#include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
@@ -9,6 +17,10 @@
 #include "nlohmann/json.hpp"
 #include "src/client.h"
 #include "src/fetch.h"
+
+ABSL_FLAG(std::optional<std::string>, openai_api_key, std::nullopt,
+          "OpenAI API key. If not set, will use the environment variable "
+          "OPENAI_API_KEY.");
 
 namespace uchen::chat {
 namespace {
@@ -44,20 +56,15 @@ absl::StatusOr<std::string> OpenAIClient::Query(
   auto response = fetch.Post(
       "https://api.openai.com/v1/chat/completions",
       {
-          {"Content-Type", "application/json"},
-          {"Authorization", absl::StrCat("Bearer ", api_key_)},
+          {.key = "Content-Type", .value = "application/json"},
+          {.key = "Authorization", .value = absl::StrCat("Bearer ", api_key_)},
       },
-      {
-        {"model", model_},
-        {"max_tokens", max_tokens_},
-        {"messages",
-         nlohmann::json::array({
-           {
-             {"role", "user"},
-             {"content", absl::StrCat(prompt, "\n\n", combined_input)}
-           }
-         })}
-      });
+      {{"model", model_},
+       {"max_tokens", max_tokens_},
+       {"messages",
+        nlohmann::json::array(
+            {{{"role", "user"},
+              {"content", absl::StrCat(prompt, "\n\n", combined_input)}}})}});
 
   if (!response.ok()) {
     return std::move(response).status();
@@ -84,46 +91,92 @@ absl::StatusOr<std::string> OpenAIClient::Query(
       (*json_response)["choices"].empty() ||
       !(*json_response)["choices"][0]["message"].contains("content") ||
       !(*json_response)["choices"][0]["message"]["content"].is_string()) {
-    return absl::InternalError(absl::StrCat(
-      "Invalid response format from OpenAI API. Full response: ",
-      json_response->dump(2)));
+    return absl::InternalError(
+        absl::StrCat("Invalid response format from OpenAI API. Full response: ",
+                     json_response->dump(2)));
   }
 
-  return (*json_response)["choices"][0]["message"]["content"].get<std::string>();
+  return (*json_response)["choices"][0]["message"]["content"]
+      .get<std::string>();
 }
 
-class OpenAIFactory {
+class OpenAIModelProvider : public ModelProvider {
  public:
-  OpenAIFactory(std::string_view model, std::string_view name)
-      : model_(model), name_(name) {}
+  OpenAIModelProvider(std::shared_ptr<Fetch> fetch, Parameters parameters)
+      : fetch_(std::move(fetch)), parameters_(std::move(parameters)) {}
+  ~OpenAIModelProvider() override = default;
 
-  absl::StatusOr<std::unique_ptr<Client>> operator()(
-      const Parameters& parameters) const {
-    if (!parameters.api_key.has_value()) {
-      return absl::InvalidArgumentError("Missing 'api_key' parameter");
+  std::string_view name() const override { return "OpenAI"; }
+
+  absl::StatusOr<ModelHandle> ConnectToModel() const override {
+    auto api_key = GetOpenAIKey();
+    if (!api_key.has_value()) {
+      return absl::InvalidArgumentError("API key is required");
     }
-    return std::make_unique<OpenAIClient>(model_, name_, *parameters.api_key,
-                                          parameters.max_tokens);
+    auto client = std::make_unique<OpenAIClient>(
+        parameters_.model, name(), *api_key, parameters_.max_tokens);
+    return ModelHandle(std::move(client));
+  }
+
+  std::vector<std::string> ListModels() const override {
+    auto api_key = GetOpenAIKey();
+    if (!api_key.has_value()) {
+      return {};
+    }
+    auto response =
+        fetch_->Get("https://api.openai.com/v1/models",
+                    {
+                        {.key = "Authorization",
+                         .value = absl::StrCat("Bearer ", *api_key)},
+                    });
+    if (!response.ok()) {
+      LOG(ERROR) << "Failed to fetch models: " << response.status();
+      return {};
+    }
+    auto json_response = response->Json();
+    if (!json_response.ok()) {
+      LOG(ERROR) << "Failed to parse models response: " << json_response.status();
+      return {};
+    }
+    if (json_response->contains("error")) {
+      LOG(ERROR) << "OpenAI API returned an error: "
+                 << (*json_response)["error"].dump(2);
+      return {};
+    }
+    if (!json_response->contains("data") ||
+        !(*json_response)["data"].is_array()) {
+      LOG(ERROR) << "Invalid response format from OpenAI API: "
+                 << json_response->dump(2);
+      return {};
+    }
+    std::vector<std::string> models;
+    for (const auto& model : (*json_response)["data"]) {
+      if (model.contains("id") && model["id"].is_string()) {
+        models.push_back(model["id"].get<std::string>());
+      }
+    }
+    std::ranges::sort(models);
+    return models;
   }
 
  private:
-  std::string_view model_;
-  std::string_view name_;
+  static std::optional<std::string> GetOpenAIKey() {
+    if (auto key = absl::GetFlag(FLAGS_openai_api_key); key.has_value()) {
+      return key;
+    }
+    return std::nullopt;
+  }
+
+  std::shared_ptr<Fetch> fetch_;
+  Parameters parameters_;
 };
 
 }  // namespace
 
-std::unordered_map<std::string_view, ClientFactory> OpenAIClients() {
-  std::unordered_map<std::string_view, ClientFactory> clients;
-  using std::string_view_literals::operator""sv;
-  static constexpr std::array kOpenAIModels = {
-      std::tuple{"gpt-4"sv, "gpt-4-turbo-2024-04-09"sv, "GPT-4 Turbo"sv},
-      std::tuple{"gpt-3.5"sv, "gpt-3.5-turbo-0125"sv, "GPT-3.5 Turbo"sv},
-  };
-  for (const auto& [id, model, name] : kOpenAIModels) {
-    clients.emplace(id, OpenAIFactory(model, name));
-  }
-  return clients;
+std::unique_ptr<ModelProvider> MakeOpenAIModelProvider(
+    std::shared_ptr<Fetch> fetch, Parameters parameters) {
+  return std::make_unique<OpenAIModelProvider>(std::move(fetch),
+                                               std::move(parameters));
 }
 
 }  // namespace uchen::chat

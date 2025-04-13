@@ -42,10 +42,15 @@ class Fetch {
   virtual absl::StatusOr<Response> Post(
       const std::string& url, absl::Span<const Header> headers,
       const nlohmann::json& payload) const = 0;
+
+  virtual absl::StatusOr<Response> Get(
+      const std::string& url, absl::Span<const Header> headers) const = 0;
 };
 
 class CurlFetch : public Fetch {
  public:
+ absl::StatusOr<Response> Get(const std::string& url,
+                              absl::Span<const Header> headers) const override;
   absl::StatusOr<Response> Post(const std::string& url,
                                 absl::Span<const Header> headers,
                                 const nlohmann::json& payload) const override;
