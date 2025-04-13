@@ -13,6 +13,7 @@ cc_binary(
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/flags:parse",
         "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/log:flags",
         "@abseil-cpp//absl/log:initialize",
         "@abseil-cpp//absl/status:statusor",
@@ -22,15 +23,19 @@ cc_binary(
 
 cc_library(
     name = "llms",
-    srcs = ["claude_client.cc", "openai_client.cc"],
+    srcs = [
+        # "claude_client.cc",
+        "openai_client.cc",
+    ],
     hdrs = [
-        "claude_client.h",
-        "openai_client.h",
+        # "claude_client.h",
         "client.h",
+        "openai_client.h",
     ],
     visibility = ["//visibility:public"],
     deps = [
         ":fetch",
+        "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@nlohmann_json//:json",

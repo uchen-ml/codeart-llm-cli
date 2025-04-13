@@ -1,23 +1,21 @@
+#include <array>
 #include <iostream>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
-#include <unordered_map>
 #include <vector>
 
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "absl/flags/usage.h"
-#include "absl/functional/any_invocable.h"
+#include "absl/log/check.h"
 #include "absl/log/initialize.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/substitute.h"
 
 #include "curl/curl.h"
-#include "src/claude_client.h"
+// #include "src/claude_client.h"
 #include "src/client.h"
 #include "src/input.h"
 #include "src/openai_client.h"
@@ -25,17 +23,6 @@
 
 namespace uchen::chat {
 namespace {
-
-std::map<std::string_view, ClientFactory> PrepareClients() {
-  auto anthropic_clients = ClaudeClients();
-  auto openai_clients = OpenAIClients();
-  std::map<std::string_view, ClientFactory> all_clients;
-  all_clients.insert(std::make_move_iterator(anthropic_clients.begin()),
-                     std::make_move_iterator(anthropic_clients.end()));
-  all_clients.insert(std::make_move_iterator(openai_clients.begin()),
-                     std::make_move_iterator(openai_clients.end()));
-  return all_clients;
-}
 
 int Chat(Client* client) {
   std::cout << "Uchen Chat CLI. Type your message below:";
@@ -62,9 +49,10 @@ int Chat(Client* client) {
 }  // namespace
 }  // namespace uchen::chat
 
-ABSL_FLAG(std::optional<std::string>, api_key, std::nullopt, "API key.");
 ABSL_FLAG(std::string, model, "gpt-3.5",
           "A well known model or provider:model tuple.");
+
+ABSL_FLAG(bool, list, false, "List available models.");
 
 int main(int argc, char* argv[]) {
   curl_global_init(CURL_GLOBAL_ALL);
@@ -76,33 +64,43 @@ int main(int argc, char* argv[]) {
                        segments.back()));
   std::vector<char*> positional_args = absl::ParseCommandLine(argc, argv);
   absl::InitializeLog();
-
-  std::pair<std::string, std::string> provider_model =
-      absl::StrSplit(absl::GetFlag(FLAGS_model), ':');
-
-  auto factories = uchen::chat::PrepareClients();
-  auto it = factories.find(provider_model.first);
-  if (it == factories.end()) {
-    std::cerr << absl::Substitute(
-        "Error: Unknown model: $0. Known models: $1\n",
-        absl::GetFlag(FLAGS_model),
-        absl::StrJoin(factories, ", ", [](std::string* out, const auto& entry) {
-          absl::StrAppend(out, entry.first);
-        }));
-    return 1;
-  }
-
+  auto fetch = std::make_shared<uchen::chat::CurlFetch>();
   uchen::chat::Parameters parameters = {
-      .model = provider_model.second,
-      .provider = provider_model.first,
-      .api_key = absl::GetFlag(FLAGS_api_key),
+      .model = absl::GetFlag(FLAGS_model),
+  };
+  std::array<std::unique_ptr<uchen::chat::ModelProvider>, 2> providers = {
+      uchen::chat::MakeOpenAIModelProvider(fetch, parameters),
+      // uchen::chat::AnthropicModelProvider(),
   };
 
-  auto client = it->second(parameters);
-  if (!client.ok()) {
-    std::cerr << "Error: " << client.status().message() << std::endl;
-    return 1;
+  if (absl::GetFlag(FLAGS_list)) {
+    for (const auto& provider : providers) {
+      auto models = provider->ListModels();
+      if (!models.empty()) {
+        std::cout << "Available models for " << provider->name() << ":\n";
+        for (const auto& model : models) {
+          std::cout << "  " << model << "\n";
+        }
+      }
+    }
+  } else {
+    absl::StatusOr<uchen::chat::ModelHandle> model;
+    for (const auto& provider : providers) {
+      auto model = provider->ConnectToModel();
+      if (model.ok()) {
+        break;
+      }
+      if (model.status().code() != absl::StatusCode::kNotFound) {
+        std::cerr << "Error: " << model.status().message() << std::endl;
+        return 1;
+      }
+    }
+    if (!model.ok()) {
+      std::cerr << "Error: No model found for " << parameters.model
+                << std::endl;
+      return 1;
+    }
+    CHECK_NE(model->get(), nullptr);
+    return uchen::chat::Chat(model->get());
   }
-
-  return uchen::chat::Chat(client->get());
 }

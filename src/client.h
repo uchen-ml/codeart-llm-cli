@@ -1,6 +1,7 @@
 #ifndef SRC_CLIENT_H_
 #define SRC_CLIENT_H_
 
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -25,14 +26,18 @@ class Client {
 
 struct Parameters {
   std::string model;
-  std::string provider;
-  std::optional<std::string> api_key;
   int max_tokens = 1024;
 };
 
-using ClientFactory =
-    absl::AnyInvocable<absl::StatusOr<std::unique_ptr<Client>>(
-        const Parameters&) const>;
+using ModelHandle = std::unique_ptr<Client>;
+
+class ModelProvider {
+ public:
+  virtual ~ModelProvider() = default;
+  virtual std::string_view name() const = 0;
+  virtual absl::StatusOr<ModelHandle> ConnectToModel() const = 0;
+  virtual std::vector<std::string> ListModels() const = 0;
+};
 
 }  // namespace uchen::chat
 
