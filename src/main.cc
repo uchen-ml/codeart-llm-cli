@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) {
   } else {
     absl::StatusOr<uchen::chat::ModelHandle> model;
     for (const auto& provider : providers) {
-      auto model = provider->ConnectToModel();
+      model = provider->ConnectToModel();
       if (model.ok()) {
         break;
       }

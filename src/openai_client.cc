@@ -106,7 +106,7 @@ class OpenAIModelProvider : public ModelProvider {
       : fetch_(std::move(fetch)), parameters_(std::move(parameters)) {}
   ~OpenAIModelProvider() override = default;
 
-  std::string_view name() const override { return "Open AI"; }
+  std::string_view name() const override { return "OpenAI"; }
 
   absl::StatusOr<ModelHandle> ConnectToModel() const override {
     auto api_key = GetOpenAIKey();
@@ -147,6 +147,7 @@ class OpenAIModelProvider : public ModelProvider {
         !(*json_response)["data"].is_array()) {
       LOG(ERROR) << "Invalid response format from OpenAI API: "
                  << json_response->dump(2);
+      return {};
     }
     std::vector<std::string> models;
     for (const auto& model : (*json_response)["data"]) {
