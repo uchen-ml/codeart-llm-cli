@@ -1,5 +1,5 @@
-#ifndef SRC_CLIENT_H_
-#define SRC_CLIENT_H_
+#ifndef SRC_MODEL_H_
+#define SRC_MODEL_H_
 
 #include <cstddef>
 #include <memory>
@@ -65,4 +65,4 @@ class ModelProvider {
 
 }  // namespace uchen::chat
 
-#endif  // SRC_CLIENT_H_
+#endif  // SRC_MODEL_H_
