@@ -14,7 +14,7 @@
 #include "absl/strings/str_join.h"
 
 #include "nlohmann/json.hpp"
-#include "src/client.h"
+#include "src/model.h"
 #include "src/fetch.h"
 
 ABSL_FLAG(std::optional<std::string>, anthropic_api_key, std::nullopt,
@@ -24,19 +24,19 @@ ABSL_FLAG(std::optional<std::string>, anthropic_api_key, std::nullopt,
 namespace uchen::chat {
 namespace {
 
-class AnthropicClient : public Client {
+class AnthropicModel : public Model {
  public:
-  AnthropicClient(std::string_view model, std::string_view name,
+  AnthropicModel(std::string_view model, std::string_view name,
                   std::string_view api_key, int max_tokens)
       : model_(model),
         name_(name),
         api_key_(api_key),
         max_tokens_(max_tokens) {}
-  ~AnthropicClient() override = default;
+  ~AnthropicModel() override = default;
 
   std::string_view name() const override { return name_; }
 
-  absl::StatusOr<std::string> Query(
+  absl::StatusOr<std::string> Prompt(
       const Fetch& fetch, std::string_view prompt,
       absl::Span<const std::string_view> input_contents) override;
 
@@ -47,7 +47,7 @@ class AnthropicClient : public Client {
   int max_tokens_;
 };
 
-absl::StatusOr<std::string> AnthropicClient::Query(
+absl::StatusOr<std::string> AnthropicModel::Prompt(
     const Fetch& fetch, std::string_view prompt,
     absl::Span<const std::string_view> input_contents) {
   std::string combined_input = absl::StrJoin(input_contents, "\n\n");
@@ -105,13 +105,13 @@ class AnthropicModelProvider : public ModelProvider {
 
   std::string_view name() const override { return "Anthropic"; }
 
-  absl::StatusOr<ModelHandle> ConnectToModel() const override {
+  absl::StatusOr<ModelHandle> ConnectToModel(std::string_view model) const override {
     auto api_key = GetKey();
     if (!api_key.has_value()) {
       return absl::InvalidArgumentError("Anthropic API key is required");
     }
-    auto client = std::make_unique<AnthropicClient>(
-        parameters_.model, name(), *api_key, parameters_.max_tokens);
+    auto client = std::make_unique<AnthropicModel>(
+        model, name(), *api_key, parameters_.max_tokens());
     return ModelHandle(std::move(client));
   }
 
@@ -165,11 +165,11 @@ class AnthropicModelProvider : public ModelProvider {
   }
 
  private:
-  static std::optional<std::string> GetKey() {
+  std::optional<std::string> GetKey() const {
     if (auto key = absl::GetFlag(FLAGS_anthropic_api_key); key.has_value()) {
       return key;
     }
-    return std::nullopt;
+    return parameters_.GetEnv("ANTHROPIC_API_KEY");
   }
 
   std::shared_ptr<Fetch> fetch_;

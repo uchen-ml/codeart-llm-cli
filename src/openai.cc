@@ -13,9 +13,10 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "absl/strings/substitute.h"
 
 #include "nlohmann/json.hpp"
-#include "src/client.h"
+#include "src/model.h"
 #include "src/fetch.h"
 
 ABSL_FLAG(std::optional<std::string>, openai_api_key, std::nullopt,
@@ -25,19 +26,19 @@ ABSL_FLAG(std::optional<std::string>, openai_api_key, std::nullopt,
 namespace uchen::chat {
 namespace {
 
-class OpenAIClient : public Client {
+class OpenAIModel : public Model {
  public:
-  explicit OpenAIClient(std::string_view model, std::string_view name,
-                        std::string_view api_key, int max_tokens)
+  explicit OpenAIModel(std::string_view model, std::string_view name,
+                       std::string_view api_key, int max_tokens)
       : model_(model),
         name_(name),
         api_key_(api_key),
         max_tokens_(max_tokens) {}
-  ~OpenAIClient() override = default;
+  ~OpenAIModel() override = default;
 
   std::string_view name() const override { return name_; }
 
-  absl::StatusOr<std::string> Query(
+  absl::StatusOr<std::string> Prompt(
       const Fetch& fetch, std::string_view prompt,
       absl::Span<const std::string_view> input_contents) override;
 
@@ -48,7 +49,7 @@ class OpenAIClient : public Client {
   int max_tokens_;
 };
 
-absl::StatusOr<std::string> OpenAIClient::Query(
+absl::StatusOr<std::string> OpenAIModel::Prompt(
     const Fetch& fetch, std::string_view prompt,
     absl::Span<const std::string_view> input_contents) {
   std::string combined_input = absl::StrJoin(input_contents, "\n\n");
@@ -108,13 +109,18 @@ class OpenAIModelProvider : public ModelProvider {
 
   std::string_view name() const override { return "OpenAI"; }
 
-  absl::StatusOr<ModelHandle> ConnectToModel() const override {
+  absl::StatusOr<ModelHandle> ConnectToModel(
+      std::string_view model) const override {
+    if (model.starts_with("claude")) {
+      return absl::NotFoundError(absl::Substitute(
+          "Model $0 is not supported by OpenAI provider.", model));
+    }
     auto api_key = GetOpenAIKey();
     if (!api_key.has_value()) {
       return absl::InvalidArgumentError("API key is required");
     }
-    auto client = std::make_unique<OpenAIClient>(
-        parameters_.model, name(), *api_key, parameters_.max_tokens);
+    auto client = std::make_unique<OpenAIModel>(model, name(), *api_key,
+                                                parameters_.max_tokens());
     return ModelHandle(std::move(client));
   }
 
@@ -135,7 +141,8 @@ class OpenAIModelProvider : public ModelProvider {
     }
     auto json_response = response->Json();
     if (!json_response.ok()) {
-      LOG(ERROR) << "Failed to parse models response: " << json_response.status();
+      LOG(ERROR) << "Failed to parse models response: "
+                 << json_response.status();
       return {};
     }
     if (json_response->contains("error")) {
@@ -160,11 +167,11 @@ class OpenAIModelProvider : public ModelProvider {
   }
 
  private:
-  static std::optional<std::string> GetOpenAIKey() {
+  std::optional<std::string> GetOpenAIKey() const {
     if (auto key = absl::GetFlag(FLAGS_openai_api_key); key.has_value()) {
       return key;
     }
-    return std::nullopt;
+    return parameters_.GetEnv("OPENAI_API_KEY");
   }
 
   std::shared_ptr<Fetch> fetch_;

@@ -1,7 +1,12 @@
 #ifndef SRC_ANTHROPIC_H_
 #define SRC_ANTHROPIC_H_
 
-#include "src/client.h"
+#include "absl/flags/declare.h"
+
+#include "src/fetch.h"
+#include "src/model.h"
+
+ABSL_DECLARE_FLAG(std::optional<std::string>, anthropic_api_key);
 
 namespace uchen::chat {
 
