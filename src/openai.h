@@ -7,7 +7,7 @@
 
 #include "absl/flags/declare.h"
 
-#include "src/client.h"
+#include "src/model.h"
 #include "src/fetch.h"
 
 ABSL_DECLARE_FLAG(std::optional<std::string>, openai_api_key);

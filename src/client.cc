@@ -1,5 +1,0 @@
-
-
-namespace llmtool {
-
-}  // namespace llmtool

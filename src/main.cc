@@ -16,15 +16,15 @@
 
 #include "curl/curl.h"
 #include "src/anthropic.h"
-#include "src/client.h"
 #include "src/input.h"
+#include "src/model.h"
 #include "src/openai.h"
 #include "src/tui.h"
 
 namespace uchen::chat {
 namespace {
 
-int Chat(Client* client) {
+int Chat(Model* model) {
   std::cout << "Uchen Chat CLI. Type your message below:";
   uchen::chat::InputReader reader(std::cin);
   while (true) {
@@ -36,7 +36,7 @@ int Chat(Client* client) {
     if (!prompt->empty()) {
       uchen::chat::CurlFetch fetch;
       auto response =
-          SpinWhile([&]() { return client->Query(fetch, *prompt, {}); });
+          SpinWhile([&]() { return model->Prompt(fetch, *prompt, {}); });
       if (!response.ok()) {
         std::cerr << "Error: " << response.status().message() << std::endl;
         return 1;
@@ -49,12 +49,13 @@ int Chat(Client* client) {
 }  // namespace
 }  // namespace uchen::chat
 
-ABSL_FLAG(std::string, model, "gpt-3.5",
+ABSL_FLAG(std::string, model, "gpt-4o-mini-search-preview",
           "A well known model or provider:model tuple.");
+ABSL_FLAG(size_t, max_tokens, 1024, "Maximum number of tokens to generate.");
 
 ABSL_FLAG(bool, list, false, "List available models.");
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[], char* envp[]) {
   curl_global_init(CURL_GLOBAL_ALL);
   std::vector<std::string> segments =
       absl::StrSplit(argv[0], absl::ByAnyChar("/\\"));
@@ -65,9 +66,8 @@ int main(int argc, char* argv[]) {
   std::vector<char*> positional_args = absl::ParseCommandLine(argc, argv);
   absl::InitializeLog();
   auto fetch = std::make_shared<uchen::chat::CurlFetch>();
-  uchen::chat::Parameters parameters = {
-      .model = absl::GetFlag(FLAGS_model),
-  };
+  uchen::chat::Parameters parameters(absl::GetFlag(FLAGS_max_tokens), envp);
+  std::string model = absl::GetFlag(FLAGS_model);
   std::array<std::unique_ptr<uchen::chat::ModelProvider>, 2> providers = {
       uchen::chat::MakeOpenAIModelProvider(fetch, parameters),
       uchen::chat::MakeAnthropicModelProvider(fetch, parameters),
@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) {
   } else {
     absl::StatusOr<uchen::chat::ModelHandle> model;
     for (const auto& provider : providers) {
-      model = provider->ConnectToModel();
+      model = provider->ConnectToModel(absl::GetFlag(FLAGS_model));
       if (model.ok()) {
         break;
       }
@@ -96,7 +96,7 @@ int main(int argc, char* argv[]) {
       }
     }
     if (!model.ok()) {
-      std::cerr << "Error: No model found for " << parameters.model
+      std::cerr << "Error: No model found for " << absl::GetFlag(FLAGS_model)
                 << std::endl;
       return 1;
     }
