@@ -1,4 +1,4 @@
-#include "src/openai_client.h"
+#include "src/openai.h"
 
 #include <algorithm>
 #include <cstdlib>

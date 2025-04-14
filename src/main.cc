@@ -15,10 +15,10 @@
 #include "absl/strings/substitute.h"
 
 #include "curl/curl.h"
-// #include "src/claude_client.h"
+#include "src/anthropic.h"
 #include "src/client.h"
 #include "src/input.h"
-#include "src/openai_client.h"
+#include "src/openai.h"
 #include "src/tui.h"
 
 namespace uchen::chat {
@@ -70,7 +70,7 @@ int main(int argc, char* argv[]) {
   };
   std::array<std::unique_ptr<uchen::chat::ModelProvider>, 2> providers = {
       uchen::chat::MakeOpenAIModelProvider(fetch, parameters),
-      // uchen::chat::AnthropicModelProvider(),
+      uchen::chat::MakeAnthropicModelProvider(fetch, parameters),
   };
 
   if (absl::GetFlag(FLAGS_list)) {

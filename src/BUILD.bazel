@@ -24,13 +24,13 @@ cc_binary(
 cc_library(
     name = "llms",
     srcs = [
-        # "claude_client.cc",
-        "openai_client.cc",
+        "anthropic.cc",
+        "openai.cc",
     ],
     hdrs = [
-        # "claude_client.h",
+        "anthropic.h",
         "client.h",
-        "openai_client.h",
+        "openai.h",
     ],
     visibility = ["//visibility:public"],
     deps = [
