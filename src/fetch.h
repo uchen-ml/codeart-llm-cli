@@ -49,11 +49,18 @@ class Fetch {
 
 class CurlFetch : public Fetch {
  public:
- absl::StatusOr<Response> Get(const std::string& url,
-                              absl::Span<const Header> headers) const override;
+  absl::StatusOr<Response> Get(const std::string& url,
+                               absl::Span<const Header> headers) const override;
   absl::StatusOr<Response> Post(const std::string& url,
                                 absl::Span<const Header> headers,
                                 const nlohmann::json& payload) const override;
+
+ private:
+  enum class HttpMethod { kGet, kPost };
+  static absl::StatusOr<Response> Request(
+      HttpMethod method, const std::string& url,
+      absl::Span<const Header> headers,
+      std::span<const char> payload);
 };
 
 }  // namespace uchen::chat

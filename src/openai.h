@@ -1,5 +1,5 @@
-#ifndef SRC_OPENAI_CLIENT_H_
-#define SRC_OPENAI_CLIENT_H_
+#ifndef SRC_OPENAI_H_
+#define SRC_OPENAI_H_
 
 #include <memory>
 #include <optional>
@@ -19,4 +19,4 @@ std::unique_ptr<ModelProvider> MakeOpenAIModelProvider(
 
 }  // namespace uchen::chat
 
-#endif  // SRC_OPENAI_CLIENT_H_
+#endif  // SRC_OPENAI_H_
