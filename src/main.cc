@@ -25,7 +25,8 @@ namespace uchen::chat {
 namespace {
 
 int Chat(Model* model) {
-  std::cout << "Uchen Chat CLI. Type your message below:";
+  std::cout << absl::Substitute("Model: $0\nType your message below:",
+                                model->name());
   uchen::chat::InputReader reader(std::cin);
   while (true) {
     std::cout << "\n> ";

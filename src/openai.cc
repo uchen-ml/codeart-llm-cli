@@ -16,8 +16,9 @@
 #include "absl/strings/substitute.h"
 
 #include "nlohmann/json.hpp"
-#include "src/model.h"
 #include "src/fetch.h"
+#include "src/json_decode.h"
+#include "src/model.h"
 
 ABSL_FLAG(std::optional<std::string>, openai_api_key, std::nullopt,
           "OpenAI API key. If not set, will use the environment variable "
@@ -28,15 +29,12 @@ namespace {
 
 class OpenAIModel : public Model {
  public:
-  explicit OpenAIModel(std::string_view model, std::string_view name,
-                       std::string_view api_key, int max_tokens)
-      : model_(model),
-        name_(name),
-        api_key_(api_key),
-        max_tokens_(max_tokens) {}
+  explicit OpenAIModel(std::string_view model, std::string_view api_key,
+                       int max_tokens)
+      : model_(model), api_key_(api_key), max_tokens_(max_tokens) {}
   ~OpenAIModel() override = default;
 
-  std::string_view name() const override { return name_; }
+  std::string_view name() const override { return model_; }
 
   absl::StatusOr<std::string> Prompt(
       const Fetch& fetch, std::string_view prompt,
@@ -44,7 +42,6 @@ class OpenAIModel : public Model {
 
  private:
   std::string model_;
-  std::string name_;
   std::string api_key_;
   int max_tokens_;
 };
@@ -77,28 +74,22 @@ absl::StatusOr<std::string> OpenAIModel::Prompt(
     return std::move(json_response).status();
   }
 
-  if (json_response->contains("error")) {
-    if ((*json_response)["error"].contains("message") &&
-        (*json_response)["error"]["message"].is_string()) {
-      return absl::InternalError(absl::StrCat(
-          "OpenAI API error: ",
-          (*json_response)["error"]["message"].get<std::string>()));
-    }
-    return absl::InternalError("OpenAI API returned an error");
-  }
-
-  if (!json_response->contains("choices") ||
-      !(*json_response)["choices"].is_array() ||
-      (*json_response)["choices"].empty() ||
-      !(*json_response)["choices"][0]["message"].contains("content") ||
-      !(*json_response)["choices"][0]["message"]["content"].is_string()) {
+  auto error = json::JsonDecode(*json_response)["error"];
+  if (error.ok()) {
+    auto error_message =
+        error["message"].String().value_or([&]() { return error->dump(); });
     return absl::InternalError(
-        absl::StrCat("Invalid response format from OpenAI API. Full response: ",
-                     json_response->dump(2)));
+        absl::StrCat("OpenAI API error: ", error_message));
   }
 
-  return (*json_response)["choices"][0]["message"]["content"]
-      .get<std::string>();
+  auto message =
+      json::JsonDecode(*json_response)["choices"][0]["message"]["content"]
+          .String();
+  if (!message.ok()) {
+    return absl::InternalError(
+        absl::StrCat("OpenAI API error: ", message.error()));
+  }
+  return message.value();
 }
 
 class OpenAIModelProvider : public ModelProvider {
@@ -119,7 +110,7 @@ class OpenAIModelProvider : public ModelProvider {
     if (!api_key.has_value()) {
       return absl::InvalidArgumentError("API key is required");
     }
-    auto client = std::make_unique<OpenAIModel>(model, name(), *api_key,
+    auto client = std::make_unique<OpenAIModel>(model, *api_key,
                                                 parameters_.max_tokens());
     return ModelHandle(std::move(client));
   }

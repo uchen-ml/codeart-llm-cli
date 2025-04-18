@@ -14,8 +14,9 @@
 #include "absl/strings/str_join.h"
 
 #include "nlohmann/json.hpp"
-#include "src/model.h"
 #include "src/fetch.h"
+#include "src/json_decode.h"
+#include "src/model.h"
 
 ABSL_FLAG(std::optional<std::string>, anthropic_api_key, std::nullopt,
           "Anthropic API key. If not set, will use the environment variable "
@@ -26,15 +27,14 @@ namespace {
 
 class AnthropicModel : public Model {
  public:
-  AnthropicModel(std::string_view model, std::string_view name,
-                  std::string_view api_key, int max_tokens)
+  AnthropicModel(std::string_view model,
+                 std::string_view api_key, int max_tokens)
       : model_(model),
-        name_(name),
         api_key_(api_key),
         max_tokens_(max_tokens) {}
   ~AnthropicModel() override = default;
 
-  std::string_view name() const override { return name_; }
+  std::string_view name() const override { return model_; }
 
   absl::StatusOr<std::string> Prompt(
       const Fetch& fetch, std::string_view prompt,
@@ -42,7 +42,6 @@ class AnthropicModel : public Model {
 
  private:
   std::string model_;
-  std::string name_;
   std::string api_key_;
   int max_tokens_;
 };
@@ -84,17 +83,13 @@ absl::StatusOr<std::string> AnthropicModel::Prompt(
                                             (*json_response)["error"].dump(2)));
   }
 
-  if (!json_response->contains("content") ||
-      !(*json_response)["content"].is_array() ||
-      (*json_response)["content"].empty() ||
-      !(*json_response)["content"][0].contains("text") ||
-      !(*json_response)["content"][0]["text"].is_string()) {
-    return absl::InternalError(absl::StrCat(
-        "Invalid response format from Anthropic API. Full response: ",
-        json_response->dump(2)));
+  auto message =
+      json::JsonDecode(*json_response)["content"][0]["text"].String();
+  if (!message.ok()) {
+    return absl::InternalError(
+        absl::StrCat("Anthropic API error: ", message.error()));
   }
-
-  return (*json_response)["content"][0]["text"].get<std::string>();
+  return message.value();
 }
 
 class AnthropicModelProvider : public ModelProvider {
@@ -105,13 +100,14 @@ class AnthropicModelProvider : public ModelProvider {
 
   std::string_view name() const override { return "Anthropic"; }
 
-  absl::StatusOr<ModelHandle> ConnectToModel(std::string_view model) const override {
+  absl::StatusOr<ModelHandle> ConnectToModel(
+      std::string_view model) const override {
     auto api_key = GetKey();
     if (!api_key.has_value()) {
       return absl::InvalidArgumentError("Anthropic API key is required");
     }
-    auto client = std::make_unique<AnthropicModel>(
-        model, name(), *api_key, parameters_.max_tokens());
+    auto client = std::make_unique<AnthropicModel>(model, *api_key,
+                                                   parameters_.max_tokens());
     return ModelHandle(std::move(client));
   }
 
