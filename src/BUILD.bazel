@@ -22,6 +22,33 @@ cc_binary(
 )
 
 cc_library(
+    name = "fetch",
+    srcs = ["fetch.cc"],
+    hdrs = ["fetch.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@abseil-cpp//absl/cleanup",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/status:statusor",
+        "@abseil-cpp//absl/strings",
+        "@curl",
+        "@nlohmann_json//:json",
+    ],
+)
+
+cc_library(
+    name = "json_decode",
+    srcs = ["json_decode.cc"],
+    hdrs = ["json_decode.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/strings",
+        "@nlohmann_json//:json",
+    ],
+)
+
+cc_library(
     name = "llms",
     srcs = [
         "anthropic.cc",
@@ -35,24 +62,10 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fetch",
+        ":json_decode",
         "@abseil-cpp//absl/flags:flag",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
-        "@nlohmann_json//:json",
-    ],
-)
-
-cc_library(
-    name = "fetch",
-    srcs = ["fetch.cc"],
-    hdrs = ["fetch.h"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@abseil-cpp//absl/cleanup",
-        "@abseil-cpp//absl/log",
-        "@abseil-cpp//absl/status:statusor",
-        "@abseil-cpp//absl/strings",
-        "@curl",
         "@nlohmann_json//:json",
     ],
 )
