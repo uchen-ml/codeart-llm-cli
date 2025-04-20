@@ -1,5 +1,30 @@
 load("@rules_cc//cc:defs.bzl", "cc_test")
 
+cc_test(name="chat_test", 
+    srcs=["chat.test.cc"],
+    deps=[
+        "//src:chat",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:globals",
+        "@abseil-cpp//absl/log:initialize",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "event_loop_test",
+    srcs = ["event_loop.test.cc"],
+    deps = [
+        "//src:event_loop",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:globals",
+        "@abseil-cpp//absl/log:initialize",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "input_test",
     srcs = ["input.test.cc"],

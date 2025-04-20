@@ -7,6 +7,7 @@ cc_binary(
     srcs = ["main.cc"],
     visibility = ["//visibility:public"],
     deps = [
+        ":chat",
         ":fetch",
         ":llms",
         ":tui",
@@ -22,6 +23,17 @@ cc_binary(
 )
 
 cc_library(
+    name = "chat",
+    srcs = ["chat.cc"],
+    hdrs = ["chat.h"],
+    deps = [
+        ":event_loop",
+        "@abseil-cpp//absl/functional:any_invocable",
+        "@abseil-cpp//absl/synchronization",
+    ],
+)
+
+cc_library(
     name = "fetch",
     srcs = ["fetch.cc"],
     hdrs = ["fetch.h"],
@@ -33,6 +45,17 @@ cc_library(
         "@abseil-cpp//absl/strings",
         "@curl",
         "@nlohmann_json//:json",
+    ],
+)
+
+cc_library(name="event_loop",
+    srcs = ["event_loop.cc"],
+    hdrs = ["event_loop.h"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@abseil-cpp//absl/functional:any_invocable",
+        "@abseil-cpp//absl/synchronization",
+        "@abseil-cpp//absl/log",
     ],
 )
 
@@ -52,6 +75,7 @@ cc_library(
     name = "llms",
     srcs = [
         "anthropic.cc",
+        "model.cc",
         "openai.cc",
     ],
     hdrs = [
@@ -61,9 +85,11 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        ":chat",
         ":fetch",
         ":json_decode",
         "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/status:statusor",
         "@abseil-cpp//absl/strings",
         "@nlohmann_json//:json",

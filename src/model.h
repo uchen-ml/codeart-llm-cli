@@ -2,27 +2,45 @@
 #define SRC_MODEL_H_
 
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 
 #include "absl/status/statusor.h"
 
-#include "src/fetch.h"
+#include "src/chat.h"
 
 namespace uchen::chat {
 
 // Interface for LLM clients
 class Model {
  public:
+  class Unsubscribe {
+   public:
+    Unsubscribe(Model* model, Chat* chat) : model_(model), chat_(chat) {}
+
+    ~Unsubscribe() { model_->subscriptions_.erase(chat_); }
+
+   private:
+    Model* model_;
+    Chat* chat_;
+  };
+
+  explicit Model(std::string name) : name_(std::move(name)) {}
   virtual ~Model() = default;
 
-  virtual std::string_view name() const = 0;
+  std::string_view name() const { return name_; }
 
-  // Queries the LLM with a prompt and multiple input contents
-  virtual absl::StatusOr<std::string> Prompt(
-      const Fetch& fetch, std::string_view prompt,
-      absl::Span<const std::string_view> input_contents) = 0;
+  // Connects the model to a chat session
+  std::unique_ptr<Unsubscribe> Connect(std::shared_ptr<Chat> chat);
+
+ protected:
+  virtual absl::StatusOr<std::string> Send(const Message& message) = 0;
+
+  std::string name_;
+  std::unordered_map<Chat*, std::unique_ptr<Chat::Unsubscribe>> subscriptions_;
 };
 
 class Parameters {
