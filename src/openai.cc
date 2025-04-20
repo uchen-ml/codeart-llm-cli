@@ -6,16 +6,18 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "absl/flags/flag.h"
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_join.h"
 #include "absl/strings/substitute.h"
 
 #include "nlohmann/json.hpp"
+#include "src/chat.h"
 #include "src/fetch.h"
 #include "src/json_decode.h"
 #include "src/model.h"
@@ -29,40 +31,35 @@ namespace {
 
 class OpenAIModel : public Model {
  public:
-  explicit OpenAIModel(std::string_view model, std::string_view api_key,
-                       int max_tokens)
-      : model_(model), api_key_(api_key), max_tokens_(max_tokens) {}
+  explicit OpenAIModel(std::string model, std::string_view api_key,
+                       int max_tokens, std::shared_ptr<Fetch> fetch)
+      : Model(std::move(model)),
+        api_key_(api_key),
+        max_tokens_(max_tokens),
+        fetch_(std::move(fetch)) {}
   ~OpenAIModel() override = default;
 
-  std::string_view name() const override { return model_; }
-
-  absl::StatusOr<std::string> Prompt(
-      const Fetch& fetch, std::string_view prompt,
-      absl::Span<const std::string_view> input_contents) override;
-
  private:
-  std::string model_;
+  absl::StatusOr<std::string> Send(const Message& message) override;
+
   std::string api_key_;
   int max_tokens_;
+  std::shared_ptr<Fetch> fetch_;
+  std::unordered_map<Chat*, std::unique_ptr<Chat::Unsubscribe>> subscriptions_;
 };
 
-absl::StatusOr<std::string> OpenAIModel::Prompt(
-    const Fetch& fetch, std::string_view prompt,
-    absl::Span<const std::string_view> input_contents) {
-  std::string combined_input = absl::StrJoin(input_contents, "\n\n");
-
-  auto response = fetch.Post(
+absl::StatusOr<std::string> OpenAIModel::Send(const Message& message) {
+  auto response = fetch_->Post(
       "https://api.openai.com/v1/chat/completions",
       {
           {.key = "Content-Type", .value = "application/json"},
           {.key = "Authorization", .value = absl::StrCat("Bearer ", api_key_)},
       },
-      {{"model", model_},
+      {{"model", name()},
        {"max_tokens", max_tokens_},
        {"messages",
         nlohmann::json::array(
-            {{{"role", "user"},
-              {"content", absl::StrCat(prompt, "\n\n", combined_input)}}})}});
+            {{{"role", "user"}, {"content", message.content()}}})}});
 
   if (!response.ok()) {
     return std::move(response).status();
@@ -82,14 +79,13 @@ absl::StatusOr<std::string> OpenAIModel::Prompt(
         absl::StrCat("OpenAI API error: ", error_message));
   }
 
-  auto message =
+  auto res =
       json::JsonDecode(*json_response)["choices"][0]["message"]["content"]
           .String();
-  if (!message.ok()) {
-    return absl::InternalError(
-        absl::StrCat("OpenAI API error: ", message.error()));
+  if (!res.ok()) {
+    return absl::InternalError(absl::StrCat("OpenAI API error: ", res.error()));
   }
-  return message.value();
+  return res.value();
 }
 
 class OpenAIModelProvider : public ModelProvider {
@@ -110,8 +106,8 @@ class OpenAIModelProvider : public ModelProvider {
     if (!api_key.has_value()) {
       return absl::InvalidArgumentError("API key is required");
     }
-    auto client = std::make_unique<OpenAIModel>(model, *api_key,
-                                                parameters_.max_tokens());
+    auto client = std::make_unique<OpenAIModel>(
+        std::string(model), *api_key, parameters_.max_tokens(), fetch_);
     return ModelHandle(std::move(client));
   }
 

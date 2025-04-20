@@ -1,4 +1,5 @@
 #include <array>
+#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -16,6 +17,8 @@
 
 #include "curl/curl.h"
 #include "src/anthropic.h"
+#include "src/chat.h"
+#include "src/event_loop.h"
 #include "src/input.h"
 #include "src/model.h"
 #include "src/openai.h"
@@ -24,10 +27,47 @@
 namespace uchen::chat {
 namespace {
 
-int Chat(Model* model) {
+constexpr absl::Duration kTimeout = absl::Seconds(5);
+
+class MessageLog {
+ public:
+  Message WaitForMessage() {
+    absl::MutexLock lock(&mutex_);
+    mutex_.AwaitWithTimeout({+[](const std::vector<Message>* messages) {
+                               return !messages->empty();
+                             },
+                             &messages_},
+                            kTimeout);
+    Message message = std::move(messages_.back());
+    messages_.pop_back();
+    return message;
+  }
+
+  void AddMessage(Message message) {
+    if (message.provider() == this) {
+      return;
+    }
+    absl::MutexLock lock(&mutex_);
+    messages_.push_back(std::move(message));
+  }
+
+ private:
+  absl::Mutex mutex_;
+  std::vector<Message> messages_ ABSL_GUARDED_BY(&mutex_);
+};
+
+int ChatLoop(Model* model) {
   std::cout << absl::Substitute("Model: $0\nType your message below:",
                                 model->name());
-  uchen::chat::InputReader reader(std::cin);
+  auto event_loop = EventLoop::Create();
+  auto chat = Chat::Create(event_loop);
+  auto model_unsubscribe = model->Connect(chat);
+  InputReader reader(std::cin);
+  CurlFetch fetch;
+  MessageLog message_log;
+  auto subscription = chat->Subscribe(
+      [&](Message message) { message_log.AddMessage(std::move(message)); });
+
   while (true) {
     std::cout << "\n> ";
     auto prompt = reader();
@@ -35,14 +75,14 @@ int Chat(Model* model) {
       return 0;
     }
     if (!prompt->empty()) {
-      uchen::chat::CurlFetch fetch;
-      auto response =
-          SpinWhile([&]() { return model->Prompt(fetch, *prompt, {}); });
-      if (!response.ok()) {
-        std::cerr << "Error: " << response.status().message() << std::endl;
-        return 1;
-      }
-      std::cout << *response << std::endl;
+      chat->SendMessage(Message::Origin::kUser, *prompt, std::nullopt,
+                        &message_log);
+      auto response = SpinWhile([&]() { return message_log.WaitForMessage(); });
+      // if (!response.ok()) {
+      //   std::cerr << "Error: " << response.status().message() << std::endl;
+      //   return 1;
+      // }
+      std::cout << response.content() << std::endl;
     }
   }
 }
@@ -73,7 +113,6 @@ int main(int argc, char* argv[], char* envp[]) {
       uchen::chat::MakeOpenAIModelProvider(fetch, parameters),
       uchen::chat::MakeAnthropicModelProvider(fetch, parameters),
   };
-
   if (absl::GetFlag(FLAGS_list)) {
     for (const auto& provider : providers) {
       auto models = provider->ListModels();
@@ -102,6 +141,6 @@ int main(int argc, char* argv[], char* envp[]) {
       return 1;
     }
     CHECK_NE(model->get(), nullptr);
-    return uchen::chat::Chat(model->get());
+    return uchen::chat::ChatLoop(model->get());
   }
 }

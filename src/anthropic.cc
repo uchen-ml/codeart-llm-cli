@@ -5,15 +5,18 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 #include "absl/flags/flag.h"
+#include "absl/log/check.h"
 #include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/strings/str_cat.h"
-#include "absl/strings/str_join.h"
 
 #include "nlohmann/json.hpp"
+#include "src/chat.h"
 #include "src/fetch.h"
 #include "src/json_decode.h"
 #include "src/model.h"
@@ -27,47 +30,39 @@ namespace {
 
 class AnthropicModel : public Model {
  public:
-  AnthropicModel(std::string_view model,
-                 std::string_view api_key, int max_tokens)
-      : model_(model),
+  AnthropicModel(std::string model, std::string_view api_key, int max_tokens,
+                 std::shared_ptr<Fetch> fetch)
+      : Model(std::move(model)),
         api_key_(api_key),
-        max_tokens_(max_tokens) {}
+        max_tokens_(max_tokens),
+        fetch_(std::move(fetch)) {}
   ~AnthropicModel() override = default;
 
-  std::string_view name() const override { return model_; }
-
-  absl::StatusOr<std::string> Prompt(
-      const Fetch& fetch, std::string_view prompt,
-      absl::Span<const std::string_view> input_contents) override;
-
  private:
-  std::string model_;
+  absl::StatusOr<std::string> Send(const Message& message) override;
+
   std::string api_key_;
   int max_tokens_;
+  std::shared_ptr<Fetch> fetch_;
+  std::unordered_map<Chat*, std::unique_ptr<Chat::Unsubscribe>> subscriptions_;
 };
 
-absl::StatusOr<std::string> AnthropicModel::Prompt(
-    const Fetch& fetch, std::string_view prompt,
-    absl::Span<const std::string_view> input_contents) {
-  std::string combined_input = absl::StrJoin(input_contents, "\n\n");
-
+absl::StatusOr<std::string> AnthropicModel::Send(const Message& message) {
   nlohmann::json request = {
-      {"model", model_},
+      {"model", name()},
       {"max_tokens", max_tokens_},
-      {"messages",
-       nlohmann::json::array(
-           {{{"role", "user"},
-             {"content", absl::StrCat(prompt, "\n\n", combined_input)}}})},
+      {"messages", nlohmann::json::array(
+                       {{{"role", "user"}, {"content", message.content()}}})},
   };
 
   auto response =
-      fetch.Post("https://api.anthropic.com/v1/messages",
-                 {
-                     {.key = "Content-Type", .value = "application/json"},
-                     {.key = "x-api-key", .value = api_key_},
-                     {.key = "anthropic-version", .value = "2023-06-01"},
-                 },
-                 request);
+      fetch_->Post("https://api.anthropic.com/v1/messages",
+                   {
+                       {.key = "Content-Type", .value = "application/json"},
+                       {.key = "x-api-key", .value = api_key_},
+                       {.key = "anthropic-version", .value = "2023-06-01"},
+                   },
+                   request);
 
   if (!response.ok()) {
     return std::move(response).status();
@@ -83,13 +78,12 @@ absl::StatusOr<std::string> AnthropicModel::Prompt(
                                             (*json_response)["error"].dump(2)));
   }
 
-  auto message =
-      json::JsonDecode(*json_response)["content"][0]["text"].String();
-  if (!message.ok()) {
+  auto res = json::JsonDecode(*json_response)["content"][0]["text"].String();
+  if (!res.ok()) {
     return absl::InternalError(
-        absl::StrCat("Anthropic API error: ", message.error()));
+        absl::StrCat("Anthropic API error: ", res.error()));
   }
-  return message.value();
+  return res.value();
 }
 
 class AnthropicModelProvider : public ModelProvider {
@@ -106,8 +100,8 @@ class AnthropicModelProvider : public ModelProvider {
     if (!api_key.has_value()) {
       return absl::InvalidArgumentError("Anthropic API key is required");
     }
-    auto client = std::make_unique<AnthropicModel>(model, *api_key,
-                                                   parameters_.max_tokens());
+    auto client = std::make_unique<AnthropicModel>(
+        std::string(model), *api_key, parameters_.max_tokens(), fetch_);
     return ModelHandle(std::move(client));
   }
 
