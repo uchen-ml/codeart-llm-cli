@@ -3,6 +3,7 @@
 
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 #include "absl/status/statusor.h"
 
@@ -28,11 +29,21 @@ struct Parameters {
   std::string provider;
   std::optional<std::string> api_key;
   int max_tokens = 1024;
+  std::unordered_map<std::string_view, std::string_view> env;
 };
 
-using ClientFactory =
-    absl::AnyInvocable<absl::StatusOr<std::unique_ptr<Client>>(
-        const Parameters&) const>;
+class ClientFactory {
+ public:
+  virtual ~ClientFactory() = default;
+
+  // Returns a list of available models for the client
+  virtual absl::StatusOr<std::vector<std::string>> list_models(
+      const Parameters&) const = 0;
+
+  // Creates a new client instance with the given parameters
+  virtual absl::StatusOr<std::unique_ptr<Client>> create_client(
+      const Parameters&) const = 0;
+};
 
 }  // namespace uchen::chat
 

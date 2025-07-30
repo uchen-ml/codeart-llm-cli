@@ -1,4 +1,5 @@
 #include <cstdlib>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -92,18 +93,23 @@ absl::StatusOr<std::string> OpenAIClient::Query(
   return (*json_response)["choices"][0]["message"]["content"].get<std::string>();
 }
 
-class OpenAIFactory {
+class OpenAIFactory : public ClientFactory {
  public:
   OpenAIFactory(std::string_view model, std::string_view name)
       : model_(model), name_(name) {}
 
-  absl::StatusOr<std::unique_ptr<Client>> operator()(
-      const Parameters& parameters) const {
+  absl::StatusOr<std::unique_ptr<Client>> create_client(
+      const Parameters& parameters) const override {
     if (!parameters.api_key.has_value()) {
       return absl::InvalidArgumentError("Missing 'api_key' parameter");
     }
     return std::make_unique<OpenAIClient>(model_, name_, *parameters.api_key,
                                           parameters.max_tokens);
+  }
+
+  absl::StatusOr<std::vector<std::string>> list_models(
+      const Parameters& /* parameters */) const override {
+    return std::vector<std::string>{""};
   }
 
  private:
@@ -113,15 +119,16 @@ class OpenAIFactory {
 
 }  // namespace
 
-std::unordered_map<std::string_view, ClientFactory> OpenAIClients() {
-  std::unordered_map<std::string_view, ClientFactory> clients;
+std::unordered_map<std::string_view, std::unique_ptr<ClientFactory>>
+OpenAIClients() {
+  std::unordered_map<std::string_view, std::unique_ptr<ClientFactory>> clients;
   using std::string_view_literals::operator""sv;
   static constexpr std::array kOpenAIModels = {
       std::tuple{"gpt-4"sv, "gpt-4-turbo-2024-04-09"sv, "GPT-4 Turbo"sv},
       std::tuple{"gpt-3.5"sv, "gpt-3.5-turbo-0125"sv, "GPT-3.5 Turbo"sv},
   };
   for (const auto& [id, model, name] : kOpenAIModels) {
-    clients.emplace(id, OpenAIFactory(model, name));
+    clients.emplace(id, std::make_unique<OpenAIFactory>(model, name));
   }
   return clients;
 }

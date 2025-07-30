@@ -1,6 +1,7 @@
 #include "src/claude_client.h"
 
 #include <cstdlib>
+#include <memory>
 #include <string>
 #include <string_view>
 
@@ -92,18 +93,23 @@ absl::StatusOr<std::string> ClaudeClient::Query(
   return (*json_response)["content"][0]["text"].get<std::string>();
 }
 
-class ClaudeFactory {
+class ClaudeFactory : public ClientFactory {
  public:
   ClaudeFactory(std::string_view model, std::string_view name)
       : model_(model), name_(name) {}
 
-  absl::StatusOr<std::unique_ptr<Client>> operator()(
-      const Parameters& parameters) const {
+  absl::StatusOr<std::unique_ptr<Client>> create_client(
+      const Parameters& parameters) const override {
     if (!parameters.api_key.has_value()) {
       return absl::InvalidArgumentError("Missing 'api_key' parameter");
     }
     return std::make_unique<ClaudeClient>(model_, name_, *parameters.api_key,
                                           parameters.max_tokens);
+  }
+
+  absl::StatusOr<std::vector<std::string>> list_models(
+      const Parameters&) const override {
+    return std::vector<std::string>{""};
   }
 
  private:
@@ -113,8 +119,9 @@ class ClaudeFactory {
 
 }  // namespace
 
-std::unordered_map<std::string_view, ClientFactory> ClaudeClients() {
-  std::unordered_map<std::string_view, ClientFactory> clients;
+std::unordered_map<std::string_view, std::unique_ptr<ClientFactory>>
+ClaudeClients() {
+  std::unordered_map<std::string_view, std::unique_ptr<ClientFactory>> clients;
   using std::string_view_literals::operator""sv;
   static constexpr std::array kClaudeModels = {
       std::tuple{"claude"sv, "claude-3-5-haiku-20241022"sv,
@@ -125,7 +132,7 @@ std::unordered_map<std::string_view, ClientFactory> ClaudeClients() {
                  "Claude 3.7 Sonnet"sv},
   };
   for (const auto& [id, model, name] : kClaudeModels) {
-    clients.emplace(id, ClaudeFactory(model, name));
+    clients.emplace(id, std::make_unique<ClaudeFactory>(model, name));
   }
   return clients;
 }

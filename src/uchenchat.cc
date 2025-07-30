@@ -10,7 +10,7 @@
 #include "absl/flags/flag.h"
 #include "absl/flags/parse.h"
 #include "absl/flags/usage.h"
-#include "absl/functional/any_invocable.h"
+#include "absl/log/log.h"
 #include "absl/log/initialize.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_split.h"
@@ -26,10 +26,10 @@
 namespace uchen::chat {
 namespace {
 
-std::map<std::string_view, ClientFactory> PrepareClients() {
+std::map<std::string_view, std::unique_ptr<ClientFactory>> PrepareClients() {
   auto anthropic_clients = ClaudeClients();
   auto openai_clients = OpenAIClients();
-  std::map<std::string_view, ClientFactory> all_clients;
+  std::map<std::string_view, std::unique_ptr<ClientFactory>> all_clients;
   all_clients.insert(std::make_move_iterator(anthropic_clients.begin()),
                      std::make_move_iterator(anthropic_clients.end()));
   all_clients.insert(std::make_move_iterator(openai_clients.begin()),
@@ -59,14 +59,29 @@ int Chat(Client* client) {
   }
 }
 
+std::unordered_map<std::string_view, std::string_view> ParseEnv(char* envp[]) {
+  std::unordered_map<std::string_view, std::string_view> env;
+  for (char** p = envp; *p != nullptr; ++p) {
+    std::string_view entry(*p);
+    auto pos = entry.find('=');
+    if (pos == std::string_view::npos) {
+      continue;
+    }
+    env[entry.substr(0, pos)] = entry.substr(pos + 1);
+  }
+  return env;
+}
+
 }  // namespace
 }  // namespace uchen::chat
 
 ABSL_FLAG(std::optional<std::string>, api_key, std::nullopt, "API key.");
 ABSL_FLAG(std::string, model, "gpt-3.5",
           "A well known model or provider:model tuple.");
+ABSL_FLAG(int, max_tokens, 1024, "Max tokens to generate per response.");
+ABSL_FLAG(bool, list_models, false, "List available models and exit.");
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[], char* envp[]) {
   curl_global_init(CURL_GLOBAL_ALL);
   std::vector<std::string> segments =
       absl::StrSplit(argv[0], absl::ByAnyChar("/\\"));
@@ -81,6 +96,27 @@ int main(int argc, char* argv[]) {
       absl::StrSplit(absl::GetFlag(FLAGS_model), ':');
 
   auto factories = uchen::chat::PrepareClients();
+  uchen::chat::Parameters parameters = {
+      .model = provider_model.second,
+      .provider = provider_model.first,
+      .api_key = absl::GetFlag(FLAGS_api_key),
+      .max_tokens = absl::GetFlag(FLAGS_max_tokens),
+      .env = uchen::chat::ParseEnv(envp),
+  };
+
+  if (absl::GetFlag(FLAGS_list_models)) {
+    for (const auto& [id, factory] : factories) {
+      std::cout << id << ": ";
+      auto models = factory->list_models(parameters);
+      if (!models.ok()) {
+        std::cerr << "Error: " << models.status().message() << std::endl;
+        return 1;
+      }
+      std::cout << absl::StrJoin(*models, ", ") << std::endl;
+    }
+    return 0;
+  }
+
   auto it = factories.find(provider_model.first);
   if (it == factories.end()) {
     std::cerr << absl::Substitute(
@@ -92,13 +128,7 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  uchen::chat::Parameters parameters = {
-      .model = provider_model.second,
-      .provider = provider_model.first,
-      .api_key = absl::GetFlag(FLAGS_api_key),
-  };
-
-  auto client = it->second(parameters);
+  auto client = it->second->create_client(parameters);
   if (!client.ok()) {
     std::cerr << "Error: " << client.status().message() << std::endl;
     return 1;

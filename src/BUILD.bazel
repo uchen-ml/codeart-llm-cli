@@ -4,7 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 cc_binary(
     name = "uchenchat",
-    srcs = ["main.cc"],
+    srcs = ["uchenchat.cc"],
     visibility = ["//visibility:public"],
     deps = [
         ":fetch",

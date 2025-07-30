@@ -8,7 +8,8 @@
 
 namespace uchen::chat {
 
-std::unordered_map<std::string_view, ClientFactory> OpenAIClients();
+std::unordered_map<std::string_view, std::unique_ptr<ClientFactory>>
+OpenAIClients();
 
 }  // namespace uchen::chat
 
